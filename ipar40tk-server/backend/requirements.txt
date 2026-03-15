@@ -1,0 +1,8 @@
+paho-mqtt
+influxdb-client
+numpy
+scipy
+scikit-learn
+asyncio
+#torch
+#/tensorflow

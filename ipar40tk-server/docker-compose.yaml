@@ -1,0 +1,126 @@
+services:
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: openmaps-mosquitto
+    restart: always
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    environment:
+      - TZ=Europe/Budapest
+    networks:
+      - openmaps-net
+
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: influxdb
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/influxdb/data:/var/lib/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=password
+      - DOCKER_INFLUXDB_INIT_ORG=bmetk
+      - DOCKER_INFLUXDB_INIT_BUCKET=openmaps
+      - DOCKER_INFLUXDB_INIT_RETENTION=30d
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUX_TOKEN_OPENMAPS}
+    networks:
+      - openmaps-net
+
+  telegraf:
+    image: telegraf:1.29-alpine
+    container_name: openmaps-telegraf
+    restart: always
+    depends_on:
+      - mosquitto
+      - influxdb
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    environment:
+      - TZ=Europe/Budapest
+    networks:
+      - openmaps-net
+
+  python_backend:
+    build: ./backend
+    container_name: openmaps-backend
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - mosquitto
+      - influxdb
+    environment:
+      - MQTT_BROKER=${MQTT_BROKER}
+      - MQTT_PORT=${MQTT_PORT}
+      - MQTT_USER=${MQTT_USER}
+      - MQTT_PASS=${MQTT_PASS}
+      - INFLUX_URL=${INFLUX_URL}
+      - INFLUX_TOKEN=${INFLUX_TOKEN_OPENMAPS}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+    ports:
+      - "8765:8765"
+    networks:
+      - openmaps-net
+
+  dashboard:
+    build: ./dashboard
+    container_name: openmaps-dashboard
+    restart: always
+    depends_on:
+      - python_backend
+    ports:
+      - "8050:8050"
+    networks:
+      - openmaps-net
+
+  analytics-download-service:
+    build: ./analytics-download
+    container_name: openmaps-analytics-download-service
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - influxdb
+    environment:
+      - INFLUX_URL=${INFLUX_URL}
+      - INFLUX_TOKEN=${INFLUX_TOKEN_OPENMAPS}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+    ports:
+      - "5000:5000"
+    networks:
+      - openmaps-net
+
+  simulator:
+    build: ./simulator
+    container_name: openmaps-simulator
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - mosquitto
+    environment:
+      - MQTT_BROKER=${MQTT_BROKER}
+      - MQTT_USER=${MQTT_USER}
+      - MQTT_PASS=${MQTT_PASS}
+    networks:
+      - openmaps-net
+    ports:
+      - "9000:9000"
+
+volumes:
+  influxdb_data:
+
+networks:
+  openmaps-net:
