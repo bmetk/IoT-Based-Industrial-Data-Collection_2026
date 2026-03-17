@@ -88,9 +88,7 @@ def process_message(topic: str, payload: str):
         write_feature(machine, "vibration_rms", rms_val)
         write_feature(machine, "vibration_fft_peak", fft_val)
 
-        features = [rms_val, fft_val]
-
-        score = predict(features)
+        score = predict([rms_val, fft_val], "vibration")
 
         if score is not None:
             write_feature(machine, "anomaly_score", score)
@@ -106,7 +104,7 @@ def process_message(topic: str, payload: str):
 
         write_feature(machine, metric, value)
 
-        score = predict([value])
+        score = predict([value], "scalar")
 
         if score is not None:
             write_feature(machine, "anomaly_score", score)
