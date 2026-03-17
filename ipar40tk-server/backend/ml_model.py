@@ -7,18 +7,30 @@ model = IsolationForest(contamination=0.02)
 
 buffer = []
 
+models = {
+    "scalar": {
+        "model": IsolationForest(contamination=0.02),
+        "buffer": []
+    },
+    "vibration": {
+        "model": IsolationForest(contamination=0.02),
+        "buffer": []
+    }
+}
 
-def predict(feature_vector):
 
-    buffer.append(feature_vector)
+def predict(feature_vector, model_key):
+    entry = models[model_key]
 
-    if len(buffer) < WINDOW:
+    fv = np.asarray(feature_vector).reshape(1, -1)
+
+    entry["buffer"].append(fv[0])
+
+    if len(entry["buffer"]) < WINDOW:
         return None
 
-    X = np.array(buffer[-WINDOW:])
+    X = np.vstack(entry["buffer"][-WINDOW:])
 
-    model.fit(X)
+    entry["model"].fit(X)
 
-    score = model.decision_function([feature_vector])[0]
-
-    return float(score)
+    return float(entry["model"].decision_function(fv)[0])
