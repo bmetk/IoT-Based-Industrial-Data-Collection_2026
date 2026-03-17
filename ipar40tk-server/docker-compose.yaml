@@ -77,8 +77,15 @@ services:
     build: ./dashboard
     container_name: openmaps-dashboard
     restart: always
+    env_file:
+      - .env
     depends_on:
       - python_backend
+    environment:
+      - INFLUX_URL=${INFLUX_URL}
+      - INFLUX_TOKEN=${INFLUX_TOKEN_OPENMAPS}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
     ports:
       - "8050:8050"
     networks:

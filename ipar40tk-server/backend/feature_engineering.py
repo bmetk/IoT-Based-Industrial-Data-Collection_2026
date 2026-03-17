@@ -2,7 +2,7 @@ import numpy as np
 import numpy.typing as npt
 from scipy import signal
 from scipy.fft import rfft
-from influx_client import write_feature
+from influx_client import write_feature, write_prediction
 from ml_model import predict
 import json
 
@@ -58,10 +58,9 @@ def parse_topic(topic: str):
 
 # Process incoming MQTT messages, extract features, and write to InfluxDB
 def parse_payload(payload: str):
-
     try:
         data = json.loads(payload)
-        return np.array(data, dtype=float)
+        return data
     except:
         return None
 
@@ -76,7 +75,6 @@ def process_message(topic: str, payload: str):
 
     # vibration pipeline
     if aspect == "vibration":
-
         vib = parse_payload(payload)
 
         if vib is None:
@@ -91,20 +89,20 @@ def process_message(topic: str, payload: str):
         score = predict([rms_val, fft_val], "vibration")
 
         if score is not None:
-            write_feature(machine, "anomaly_score", score)
+            write_prediction(machine, "vibration", score)
 
     # Scalar sensors
     else:
+        value = parse_payload(payload)
 
-        try:
-            value = float(payload)
-
-        except:
+        if not isinstance(value, (int, float)):
             return
+
+        value = float(value)
 
         write_feature(machine, metric, value)
 
         score = predict([value], "scalar")
 
         if score is not None:
-            write_feature(machine, "anomaly_score", score)
+            write_prediction(machine, aspect, score)

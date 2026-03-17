@@ -18,19 +18,25 @@ models = {
     }
 }
 
-
 def predict(feature_vector, model_key):
     entry = models[model_key]
 
-    fv = np.asarray(feature_vector).reshape(1, -1)
+    fv = np.asarray(feature_vector, dtype=float).flatten()
 
-    entry["buffer"].append(fv[0])
+    if entry["buffer"]:
+        expected_dim = entry["buffer"][0].shape[0]
+        if fv.shape[0] != expected_dim:
+            print(f"[ERROR] Shape mismatch in {model_key}: got {fv.shape}, expected {expected_dim}")
+            return None
+
+    entry["buffer"].append(fv)
 
     if len(entry["buffer"]) < WINDOW:
         return None
 
     X = np.vstack(entry["buffer"][-WINDOW:])
 
-    entry["model"].fit(X)
+    if len(entry["buffer"]) == WINDOW:
+        entry["model"].fit(X)
 
-    return float(entry["model"].decision_function(fv)[0])
+    return float(entry["model"].decision_function(fv.reshape(1, -1))[0])

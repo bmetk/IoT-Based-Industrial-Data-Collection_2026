@@ -9,7 +9,7 @@ client = InfluxDBClient(
 
 write_api = client.write_api()
 
-# Functions to write features and predictions to InfluxDB
+# Write transformed data.
 def write_feature(machine, feature_name, value):
 
     point = (
@@ -20,12 +20,13 @@ def write_feature(machine, feature_name, value):
 
     write_api.write(bucket=INFLUX_BUCKET, record=point)
 
-# Function to write anomaly scores to InfluxDB
-def write_prediction(machine, score):
+# Write anomaly preditions by aspect.
+def write_prediction(machine, aspect, score):
 
     point = (
         Point("lathe_predictions")
         .tag("machine", machine)
+        .tag("aspect", aspect)
         .field("anomaly_score", float(score))
     )
 

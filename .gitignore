@@ -1,3 +1,6 @@
+# Build files
+mosquitto/data/mosquitto.db
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -204,3 +207,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+ipar40tk-server/mosquitto/data/mosquitto.db
+ipar40tk-server/mosquitto/data/mosquitto.db
+ipar40tk-server/mosquitto/data/mosquitto.db
+ipar40tk-server/mosquitto/data/mosquitto.db

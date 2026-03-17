@@ -15,9 +15,5 @@ if MQTT_USER:
 client.connect(MQTT_BROKER, MQTT_PORT)
 
 def publish(topic, value):
-
-    # convert list/dict to JSON
-    if isinstance(value, (list, dict)):
-        value = json.dumps(value)
-
+    value = json.dumps(value)
     client.publish(topic, value)
