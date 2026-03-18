@@ -1,5 +1,6 @@
 import dash
 from dash import dcc, html, Input, Output
+from dash import no_update
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from influx_query import *
@@ -72,42 +73,82 @@ def update_scalars(machine,_):
 
     df=query_features(machine)
 
-    rpm=df[df["_field"]=="rpm"]["_value"].iloc[-1]
-    temp=df[df["_field"]=="temperature"]["_value"].iloc[-1]
-    current=df[df["_field"]=="current"]["_value"].iloc[-1]
+    if df.empty:
+        return no_update, no_update, no_update, no_update, no_update, no_update
 
-    #rpm_score=query_latest_anomaly(machine,"rpm")
-    #temp_score=query_latest_anomaly(machine,"temperature")
-    #current_score=query_latest_anomaly(machine,"current")
+    def get_latest(df, field):
+
+        if df is None or df.empty:
+            return None
+
+        if "_field" not in df.columns or "_value" not in df.columns:
+            return None
+
+        sub = df[df["_field"] == field]
+
+        if sub.empty:
+            return None
+
+        return float(sub["_value"].iloc[-1])
+    
+    def get_3phase(df):
+        return (
+            get_latest(df, "current_a"),
+            get_latest(df, "current_b"),
+            get_latest(df, "current_c"),
+        )
+    rpm = get_latest(df, "rpm")
+    temp = get_latest(df, "tempC")
+    rpm_score = query_latest_anomaly(machine, "speed")
+    temp_score = query_latest_anomaly(machine, "temperature")
+    current_score = query_latest_anomaly(machine, "current")
 
     rpm_fig=go.Figure(go.Indicator(
         mode="gauge+number",
-        value=rpm,
-        title={"text":"RPM"},
+        value = rpm if rpm is not None else 0,
+        title = "RPM (no data)" if rpm is None else "RPM",
         gauge={"axis":{"range":[0,3000]}}
     ))
 
     temp_fig=go.Figure(go.Indicator(
         mode="gauge+number",
-        value=temp,
-        title={"text":"Temperature"},
+        value = temp if temp is not None else 0,
+        title = "Temperature (no data)" if temp is None else "Temperature",
         gauge={"axis":{"range":[0,120]}}
     ))
 
-    current_fig=go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=current,
-        title={"text":"Current"},
-        gauge={"axis":{"range":[0,20]}}
-    ))
+    ia, ib, ic = get_3phase(df)
+    if all(v is None for v in [ia, ib, ic]):
+        return go.Figure(), "No data"
+
+    values = [
+        ia if ia is not None else 0,
+        ib if ib is not None else 0,
+        ic if ic is not None else 0
+    ]
+
+    current_fig = go.Figure(
+        data=[
+            go.Bar(
+                x=["Phase A", "Phase B", "Phase C"],
+                y=values,
+                marker_color=["blue", "green", "orange"]
+            )
+        ]
+    )
+
+    current_fig.update_layout(
+        title="Current (3-phase)",
+        yaxis_title="Ampere",
+    )
 
     return (
         rpm_fig,
-        #health_indicator(rpm_score),
+        health_indicator(rpm_score),
 
         temp_fig,
-        #health_indicator(temp_score),
+        health_indicator(temp_score),
 
         current_fig,
-        #health_indicator(current_score)
+        health_indicator(current_score)
     )

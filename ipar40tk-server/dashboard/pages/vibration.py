@@ -2,8 +2,9 @@ import dash
 from dash import dcc
 from dash import dcc, html, Input, Output
 import dash_bootstrap_components as dbc
-import components.health_indicator as health_indicator
+from components.health_indicator import health_indicator
 from influx_query import *
+import plotly.graph_objects as go
 
 dash.register_page(__name__, path="/vibration")
 
@@ -30,22 +31,22 @@ layout = dbc.Container([
     Input("refresh","n_intervals")
 
 )
-def update_vibration(machine,axis,_):
+def update_vibration(machine, axis, _):
 
-    df=query_vibration(machine,axis)
+    df = query_vibration(machine, axis)
+    if df is None or df.empty or "_value" not in df.columns:
+        return go.Figure(), "No data"
 
-    score=query_latest_anomaly(machine,"vibration")
+    score = query_latest_anomaly(machine, "vibration")
 
-    fig=go.Figure()
+    fig = go.Figure()
 
     fig.add_trace(
-
         go.Scatter(
             x=df["_time"],
             y=df["_value"],
             mode="lines"
         )
-
     )
 
     fig.update_layout(
@@ -53,9 +54,9 @@ def update_vibration(machine,axis,_):
         template="plotly_dark"
     )
 
-    if score < -0.3:
+    if score is not None and score < -0.3:
         fig.update_layout(
             paper_bgcolor="rgba(255,0,0,0.15)"
         )
 
-    return fig,health_indicator(score)
+    return fig, health_indicator(score)

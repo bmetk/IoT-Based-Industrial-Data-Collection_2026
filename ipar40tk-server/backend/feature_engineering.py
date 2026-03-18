@@ -12,12 +12,12 @@ Array = npt.NDArray[np.float64]
 
 
 def rms(vib: Array) -> float:
-    """Root Mean Square of vibration signal."""
+    vib = np.asarray(vib, dtype=float)
     return np.sqrt(np.mean(vib ** 2))
 
 
 def fft_peak(vib: Array) -> float:
-    """Maximum amplitude of FFT spectrum."""
+    vib = np.asarray(vib, dtype=float)
     windowed = vib * signal.windows.hamming(vib.size)
     spectrum = np.abs(rfft(windowed))
     return float(np.max(spectrum))
@@ -77,8 +77,10 @@ def process_message(topic: str, payload: str):
     if aspect == "vibration":
         vib = parse_payload(payload)
 
-        if vib is None:
+        if not vib or not isinstance(vib, list):
             return
+
+        vib = np.asarray(vib, dtype=float)
 
         rms_val = rms(vib)
         fft_val = fft_peak(vib)
@@ -90,6 +92,34 @@ def process_message(topic: str, payload: str):
 
         if score is not None:
             write_prediction(machine, "vibration", score)
+
+    elif aspect == "current":
+
+        value = parse_payload(payload)
+
+        if not isinstance(value, list) or len(value) != 3:
+            return
+
+        try:
+            ia, ib, ic = [float(v) for v in value]
+        except:
+            return
+
+        mean_current = np.mean([ia, ib, ic])
+        max_current = np.max([ia, ib, ic])
+        imbalance = max_current - min([ia, ib, ic])
+
+        write_feature(machine, "current_a", ia)
+        write_feature(machine, "current_b", ib)
+        write_feature(machine, "current_c", ic)
+
+        write_feature(machine, "current_mean", mean_current)
+        write_feature(machine, "current_imbalance", imbalance)
+
+        score = predict([mean_current, max_current, imbalance], "scalar")
+
+        if score is not None:
+            write_prediction(machine, "current", score)
 
     # Scalar sensors
     else:

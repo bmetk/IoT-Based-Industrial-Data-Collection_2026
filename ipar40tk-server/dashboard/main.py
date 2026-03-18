@@ -15,7 +15,7 @@ app.layout = dbc.Container([
 
     dcc.Interval(
         id="refresh",
-        interval=2000,
+        interval=4000,
         n_intervals=0
     ),
 

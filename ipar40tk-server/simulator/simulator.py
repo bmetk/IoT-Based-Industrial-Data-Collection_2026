@@ -9,7 +9,6 @@ def simulate_machine(machine_id):
         temp = model.temperature()
         rpm = model.rpm()
         cur = model.current()
-        vib = model.vibration()
 
         publish(f"factory/{machine_id}/temperature/mlx90614/tempC", temp)
 
@@ -17,8 +16,8 @@ def simulate_machine(machine_id):
 
         publish(f"factory/{machine_id}/current/zmct103c/amp", cur)
 
-        publish(f"factory/{machine_id}/vibration/mpu9250/vibX", vib)
-        publish(f"factory/{machine_id}/vibration/mpu9250/vibY", vib)
-        publish(f"factory/{machine_id}/vibration/mpu9250/vibZ", vib)
+        publish(f"factory/{machine_id}/vibration/mpu9250/vibX", model.vibration())
+        publish(f"factory/{machine_id}/vibration/mpu9250/vibY", model.vibration())
+        publish(f"factory/{machine_id}/vibration/mpu9250/vibZ", model.vibration())
 
         time.sleep(1)
