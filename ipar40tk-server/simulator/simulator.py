@@ -2,9 +2,9 @@ import time
 from mqtt_publisher import publish
 import machine_model as model
 
-def simulate_machine(machine_id):
+def simulate_machine(machine_id, stop_event):
 
-    while True:
+    while not stop_event.is_set():
 
         temp = model.temperature()
         rpm = model.rpm()

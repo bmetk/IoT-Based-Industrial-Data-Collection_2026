@@ -2,7 +2,7 @@ import numpy as np
 import numpy.typing as npt
 from scipy import signal
 from scipy.fft import rfft
-from influx_client import write_feature, write_prediction
+from influx_client import *
 from ml_model import predict
 import json
 
@@ -88,6 +88,20 @@ def process_message(topic: str, payload: str):
         write_feature(machine, "vibration_rms", rms_val)
         write_feature(machine, "vibration_fft_peak", fft_val)
 
+        fft_vals = calculate_fft(vib)
+        freqs = np.linspace(0, SAMPLING_FREQ / 2, len(fft_vals))
+        # Downsample
+        fft_vals = fft_vals[::4]
+        freqs = freqs[::4]
+        mask = freqs <= 200
+        freqs = freqs[mask]
+        fft_vals = np.array(fft_vals)[mask]
+        idx = np.argsort(fft_vals)[-20:]
+        freqs = freqs[idx]
+        fft_vals = np.array(fft_vals)[idx]
+
+        write_fft(machine, metric, freqs, fft_vals)
+
         score = predict([rms_val, fft_val], "vibration")
 
         if score is not None:
@@ -116,7 +130,7 @@ def process_message(topic: str, payload: str):
         write_feature(machine, "current_mean", mean_current)
         write_feature(machine, "current_imbalance", imbalance)
 
-        score = predict([mean_current, max_current, imbalance], "scalar")
+        score = predict([mean_current, max_current, imbalance], "current")
 
         if score is not None:
             write_prediction(machine, "current", score)

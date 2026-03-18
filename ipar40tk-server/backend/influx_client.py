@@ -31,3 +31,22 @@ def write_prediction(machine, aspect, score):
     )
 
     write_api.write(bucket=INFLUX_BUCKET, record=point)
+
+# Write FFT data as separate points for each frequency bin.
+def write_fft(machine, axis, freqs, amplitudes):
+
+    points = []
+
+    for f, amp in zip(freqs, amplitudes):
+
+        point = (
+            Point("lathe_fft")
+            .tag("machine", machine)
+            .tag("axis", axis) # vibX / vibY / vibZ
+            .tag("freq", round(f, 2))
+            .field("amplitude", float(amp))
+        )
+
+        points.append(point)
+
+    write_api.write(bucket=INFLUX_BUCKET, record=points)

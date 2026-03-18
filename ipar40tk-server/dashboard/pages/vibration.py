@@ -23,8 +23,9 @@ layout = dbc.Container([
 
 @dash.callback(
 
-    Output("vibration-graph","figure"),
-    Output("vibration-health","children"),
+    Output("rms-graph","figure"),
+    Output("fft-graph","figure"),
+    Output("psd-graph","figure"),
 
     Input("machine-selector","value"),
     Input("vibration-tabs","value"),

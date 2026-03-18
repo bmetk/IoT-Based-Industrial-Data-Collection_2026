@@ -99,9 +99,15 @@ def update_scalars(machine,_):
         )
     rpm = get_latest(df, "rpm")
     temp = get_latest(df, "tempC")
+    
     rpm_score = query_latest_anomaly(machine, "speed")
+    rpm_mean, rpm_std = query_anomaly_stats(machine, "speed")
+
     temp_score = query_latest_anomaly(machine, "temperature")
+    temp_mean, temp_std = query_anomaly_stats(machine, "temperature")
+
     current_score = query_latest_anomaly(machine, "current")
+    current_mean, current_std = query_anomaly_stats(machine, "current")
 
     rpm_fig=go.Figure(go.Indicator(
         mode="gauge+number",
@@ -119,7 +125,11 @@ def update_scalars(machine,_):
 
     ia, ib, ic = get_3phase(df)
     if all(v is None for v in [ia, ib, ic]):
-        return go.Figure(), "No data"
+        return (
+            rpm_fig, "No data",
+            temp_fig, "No data",
+            go.Figure(), "No data"
+        )
 
     values = [
         ia if ia is not None else 0,
@@ -144,11 +154,52 @@ def update_scalars(machine,_):
 
     return (
         rpm_fig,
-        health_indicator(rpm_score),
+        health_indicator(rpm_score, rpm_mean, rpm_std),
 
         temp_fig,
-        health_indicator(temp_score),
+        health_indicator(temp_score, temp_mean, temp_std),
 
         current_fig,
-        health_indicator(current_score)
+        health_indicator(current_score, current_mean, current_std)
     )
+
+@dash.callback(
+    Output("vibration-graph", "figure"),
+    Output("vibration-health", "children"),
+    Input("machine-selector", "value"),
+    Input("vibration-tabs", "value"),
+    Input("refresh", "n_intervals")
+)
+def update_vibration(machine, axis, _):
+
+    df = query_fft(machine, axis)
+
+    if df is None or df.empty:
+        return go.Figure(), "No data"
+
+    x = df["freq"].astype(float)
+    y = df["_value"]
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=x,
+        y=y,
+        marker_color="darkblue"
+    ))
+
+    fig.update_layout(
+        title=f"Vibration spectrum ({axis})",
+        template="plotly_white"
+    )
+
+    fig.update_xaxes(title="Frequency [Hz]")
+    fig.update_yaxes(title="Amplitude", type="log")
+
+    # anomaly
+    score = query_latest_anomaly(machine, "vibration")
+    mean, std = query_anomaly_stats(machine, "vibration")
+
+    health = health_indicator(score, mean, std)
+
+    return fig, health

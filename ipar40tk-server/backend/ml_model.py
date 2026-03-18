@@ -12,6 +12,10 @@ models = {
         "model": IsolationForest(contamination=0.02),
         "buffer": []
     },
+    "current": {
+        "model": IsolationForest(contamination=0.02),
+        "buffer": []
+    },
     "vibration": {
         "model": IsolationForest(contamination=0.02),
         "buffer": []

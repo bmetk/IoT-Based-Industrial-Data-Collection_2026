@@ -81,3 +81,46 @@ def query_vibration(machine, axis):
         df = pd.concat(df)
 
     return df
+
+def query_anomaly_stats(machine, aspect):
+    query = f'''
+    from(bucket:"openmaps")
+      |> range(start:-1h)
+      |> filter(fn:(r)=> r["_measurement"]=="lathe_predictions")
+      |> filter(fn:(r)=> r["machine"]=="{machine}")
+      |> filter(fn:(r)=> r["aspect"]=="{aspect}")
+    '''
+    
+    df = query_api.query_data_frame(query)
+
+    if isinstance(df, list):
+        df = pd.concat(df)
+
+    if df.empty:
+        return None, None
+
+    values = df["_value"].values
+
+    return float(values.mean()), float(values.std())
+
+def query_fft(machine, axis):
+
+    query = f'''
+    from(bucket:"openmaps")
+      |> range(start:-2m)
+      |> filter(fn:(r)=> r["_measurement"]=="lathe_fft")
+      |> filter(fn:(r)=> r["machine"]=="{machine}")
+      |> filter(fn:(r)=> r["axis"]=="{axis}")
+      |> group(columns: ["freq"])
+      |> last()
+    '''
+
+    df = query_api.query_data_frame(query)
+
+    if isinstance(df, list):
+        df = pd.concat(df)
+
+    if df.empty:
+        return None
+
+    return df
