@@ -1,22 +1,40 @@
 from dash import html
 import dash_bootstrap_components as dbc
 
-def health_indicator(score, mean=None, std=None):
+def health_indicator(score):
 
     if score is None:
         return dbc.Badge("UNKNOWN", color="secondary")
 
-    if mean is None or std is None:
-        return dbc.Badge("NO BASELINE", color="secondary")
+    # Normalize score to 0-100% range
+    min_s = -0.3
+    max_s = 0.2
 
-    warning = mean - 2 * std
-    anomaly = mean - 3 * std
+    score = max(min(score, max_s), min_s)
+    health = (score - min_s) / (max_s - min_s)
+    percent = int(health * 100)
 
-    if score >= warning:
-        return dbc.Badge("HEALTHY", color="success")
-
-    elif score >= anomaly:
-        return dbc.Badge("WARNING", color="warning")
-
+    # Status thresholds
+    if percent > 70:
+        color = "success"
+        label = "HEALTHY"
+    elif percent > 40:
+        color = "warning"
+        label = "WARNING"
     else:
-        return dbc.Badge("ANOMALY", color="danger")
+        color = "danger"
+        label = "ANOMALY"
+
+    return dbc.Container([
+
+        dbc.Progress(
+            value=percent,
+            color=color,
+            style={"height": "20px"}
+        ),
+
+        html.Div(
+            f"{label} ({percent}%) | score: {round(score,3)}",
+            style={"marginTop": "5px", "fontSize": "14px"}
+        )
+])

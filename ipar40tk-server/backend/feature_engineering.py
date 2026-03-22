@@ -1,3 +1,5 @@
+from platform import machine
+
 import numpy as np
 import numpy.typing as npt
 from scipy import signal
@@ -9,6 +11,19 @@ import json
 SAMPLING_FREQ = 1000
 
 Array = npt.NDArray[np.float64]
+
+# Global machine state cache
+machine_state = {}
+
+def update_state(machine, key, value):
+    if machine not in machine_state:
+        machine_state[machine] = {}
+
+    machine_state[machine][key] = value
+
+
+def get_state(machine, key):
+    return machine_state.get(machine, {}).get(key)
 
 
 def rms(vib: Array) -> float:
@@ -43,6 +58,10 @@ def get_psd(vib: Array) -> tuple[list[float], list[float]]:
     f, psd = signal.periodogram(vib, fs=SAMPLING_FREQ, window="hamming")
     return f.tolist(), psd.tolist()
 
+def spectral_energy(vib):
+    spectrum = np.abs(rfft(vib))
+    return float(np.sum(spectrum ** 2))
+
 # MQTT message processing pipeline
 def parse_topic(topic: str):
 
@@ -73,7 +92,7 @@ def process_message(topic: str, payload: str):
     aspect = info["aspect"]
     metric = info["metric"]
 
-    # vibration pipeline
+    # Vibration pipeline
     if aspect == "vibration":
         vib = parse_payload(payload)
 
@@ -81,31 +100,51 @@ def process_message(topic: str, payload: str):
             return
 
         vib = np.asarray(vib, dtype=float)
+        axis = metric
 
         rms_val = rms(vib)
         fft_val = fft_peak(vib)
+        energy = spectral_energy(vib)
 
-        write_feature(machine, "vibration_rms", rms_val)
-        write_feature(machine, "vibration_fft_peak", fft_val)
+        write_feature(machine, f"{axis}_rms", rms_val)
+        write_feature(machine, f"{axis}_fft_peak", fft_val)
 
         fft_vals = calculate_fft(vib)
         freqs = np.linspace(0, SAMPLING_FREQ / 2, len(fft_vals))
-        # Downsample
-        fft_vals = fft_vals[::4]
-        freqs = freqs[::4]
+
+        # Downsample FFT 
+        step = 4
+        fft_vals = fft_vals[::step]
+        freqs = freqs[::step]
+
+        # Filter frequencies up to 200 Hz
         mask = freqs <= 200
         freqs = freqs[mask]
         fft_vals = np.array(fft_vals)[mask]
-        idx = np.argsort(fft_vals)[-20:]
-        freqs = freqs[idx]
-        fft_vals = np.array(fft_vals)[idx]
 
-        write_fft(machine, metric, freqs, fft_vals)
+        # Top-N frequency components
+        N = 20
+        idx = np.argsort(fft_vals)[-N:]
 
-        score = predict([rms_val, fft_val], "vibration")
+        freqs_top = freqs[idx]
+        amps_top = fft_vals[idx]
+
+        write_fft(machine, axis, freqs_top, amps_top)
+
+        rpm = get_state(machine, "rpm")
+        temperature = get_state(machine, "temperature")
+        current_mean = get_state(machine, "current_mean")
+        imbalance = get_state(machine, "current_imbalance")
+
+        if None in [rpm, temperature, current_mean, imbalance]:
+            return
+        
+        feature_vector = [rms_val, fft_val, energy, current_mean, imbalance, temperature, rpm]
+
+        score = predict(feature_vector, rpm)
 
         if score is not None:
-            write_prediction(machine, "vibration", score)
+            write_prediction(machine, "combined", score)
 
     elif aspect == "current":
 
@@ -130,12 +169,10 @@ def process_message(topic: str, payload: str):
         write_feature(machine, "current_mean", mean_current)
         write_feature(machine, "current_imbalance", imbalance)
 
-        score = predict([mean_current, max_current, imbalance], "current")
+        update_state(machine, "current_mean", mean_current)
+        update_state(machine, "current_imbalance", imbalance)
 
-        if score is not None:
-            write_prediction(machine, "current", score)
-
-    # Scalar sensors
+    # Scalar pipeline (temperature, rpm)
     else:
         value = parse_payload(payload)
 
@@ -146,7 +183,9 @@ def process_message(topic: str, payload: str):
 
         write_feature(machine, metric, value)
 
-        score = predict([value], "scalar")
+        # STATE UPDATE
+        if metric == "rpm":
+            update_state(machine, "rpm", value)
 
-        if score is not None:
-            write_prediction(machine, aspect, score)
+        if metric in ["tempC", "temperature"]:
+            update_state(machine, "temperature", value)

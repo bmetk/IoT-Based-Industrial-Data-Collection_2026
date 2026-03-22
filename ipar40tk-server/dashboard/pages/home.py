@@ -100,14 +100,14 @@ def update_scalars(machine,_):
     rpm = get_latest(df, "rpm")
     temp = get_latest(df, "tempC")
     
-    rpm_score = query_latest_anomaly(machine, "speed")
-    rpm_mean, rpm_std = query_anomaly_stats(machine, "speed")
+    rpm_score = query_latest_anomaly(machine, "combined")
+    rpm_mean, rpm_std = query_anomaly_stats(machine, "combined")
 
-    temp_score = query_latest_anomaly(machine, "temperature")
-    temp_mean, temp_std = query_anomaly_stats(machine, "temperature")
+    temp_score = query_latest_anomaly(machine, "combined")
+    temp_mean, temp_std = query_anomaly_stats(machine, "combined")
 
-    current_score = query_latest_anomaly(machine, "current")
-    current_mean, current_std = query_anomaly_stats(machine, "current")
+    current_score = query_latest_anomaly(machine, "combined")
+    current_mean, current_std = query_anomaly_stats(machine, "combined")
 
     rpm_fig=go.Figure(go.Indicator(
         mode="gauge+number",
@@ -154,13 +154,13 @@ def update_scalars(machine,_):
 
     return (
         rpm_fig,
-        health_indicator(rpm_score, rpm_mean, rpm_std),
+        health_indicator(rpm_score),
 
         temp_fig,
-        health_indicator(temp_score, temp_mean, temp_std),
+        health_indicator(temp_score),
 
         current_fig,
-        health_indicator(current_score, current_mean, current_std)
+        health_indicator(current_score)
     )
 
 @dash.callback(
@@ -197,9 +197,9 @@ def update_vibration(machine, axis, _):
     fig.update_yaxes(title="Amplitude", type="log")
 
     # anomaly
-    score = query_latest_anomaly(machine, "vibration")
-    mean, std = query_anomaly_stats(machine, "vibration")
+    score = query_latest_anomaly(machine, "combined")
+    mean, std = query_anomaly_stats(machine, "combined")
 
-    health = health_indicator(score, mean, std)
+    health = health_indicator(score)
 
     return fig, health
