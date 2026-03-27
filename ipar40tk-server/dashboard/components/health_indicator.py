@@ -8,7 +8,7 @@ def health_indicator(score):
 
     # Normalize score to 0-100% range
     min_s = -0.3
-    max_s = 0.2
+    max_s = 0.15
 
     score = max(min(score, max_s), min_s)
     health = (score - min_s) / (max_s - min_s)

@@ -63,14 +63,23 @@ def predict(feature_vector, rpm):
     if entry.get("freeze"):
         return float(score) if score is not None else None
     
+    if not entry["fitted"]:
+        entry["baseline_buffer"].append(fv)
+    elif score is not None and score > 0:
+        entry["baseline_buffer"].append(fv)
+
     # Only score if model is fitted to avoid unreliable scores during warmup period
     if entry["fitted"]:
         fv_scaled = entry["scaler"].transform(fv.reshape(1, -1))
         score = entry["model"].decision_function(fv_scaled)[0]
 
     # If the score is not highly anomalous, we can add the feature vector to a baseline buffer which the model can learn from to adapt to normal data patterns over time
-    if score is None or score > -0.05:
+    if score is not None and score > 0:
         entry["baseline_buffer"].append(fv)
+
+    # Unfreeze model
+    if entry.get("freeze") and score is not None and score > -0.05:
+        entry["freeze"] = False
 
     # If the score is highly anomalous, we can choose to freeze the model to prevent it from learning from anomalous data points which could degrade its performance
     if score is not None and score < -0.15:
@@ -85,13 +94,19 @@ def predict(feature_vector, rpm):
     if entry["warmup"] < WARMUP:
         return None
 
-    # Use baseline buffer for training to adapt to new normal patterns while avoiding learning from anomalies
-    X = np.vstack(entry["baseline_buffer"][-500:])
+    # Limit for buffer
+    if len(entry["baseline_buffer"]) > 500:
+        entry["baseline_buffer"] = entry["baseline_buffer"][-500:]
+
+    if len(entry["baseline_buffer"]) < 20:
+        return None
+
+    X = np.vstack(entry["baseline_buffer"])
 
     # Retrain the model periodically to adapt to new data patterns while avoiding overfitting
     entry["counter"] += 1
 
-    if entry["counter"] % RETRAIN_INTERVAL == 0:
+    if False and entry["counter"] % RETRAIN_INTERVAL == 0:
         if score > -0.1:
             entry["scaler"].fit(X)
             X_scaled = entry["scaler"].transform(X)

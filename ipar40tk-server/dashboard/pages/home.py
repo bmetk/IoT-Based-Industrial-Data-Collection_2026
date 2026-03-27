@@ -53,7 +53,7 @@ layout = dbc.Container([
 
     ])
 
-])
+], style={"padding": 0}, fluid=True )
 
 
 @dash.callback(

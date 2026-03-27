@@ -10,12 +10,12 @@ navbar = dbc.Navbar(
 
         html.Div([
             html.Img(
-                src="/assets/logo.png",
-                height="40px",
-                style={"borderRadius": "20%", "marginRight": "10px"}
+                src="/assets/VIKTK.svg",
+                height="50px",
+                style={"borderRadius": "20%", "marginRight": "10px", "background-color": "white"}
             ),
             dbc.NavbarBrand("OpenMAPS Dashboard"),
-        ], style={"display": "flex", "alignItems": "center"}),
+        ], style={"display": "flex", "alignItems": "left"}),
 
         dbc.Nav([
 
@@ -55,7 +55,7 @@ navbar = dbc.Navbar(
             )
         ], style={"display": "flex", "alignItems": "center", "gap": "10px"})
 
-    ]),
+    ], style={"display": "flex", "padding": 0}, fluid=True),
 
     color="primary",
     dark=True

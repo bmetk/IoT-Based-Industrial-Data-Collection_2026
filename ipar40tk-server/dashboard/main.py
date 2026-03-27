@@ -23,7 +23,7 @@ app.layout = dbc.Container([
 
     dash.page_container
 
-], fluid=True)
+], style={"padding":0}, fluid=True)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8050, debug=True)

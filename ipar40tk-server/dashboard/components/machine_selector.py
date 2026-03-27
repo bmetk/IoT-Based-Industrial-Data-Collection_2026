@@ -4,6 +4,8 @@ machine_selector = dcc.Dropdown(
 
     id="machine-selector",
 
+    placeholder=" Search",
+
     options=[
         {"label": "Lathe 01", "value": "lathe01"},
         {"label": "Lathe 02", "value": "lathe02"},
@@ -17,5 +19,5 @@ machine_selector = dcc.Dropdown(
     persistence=True,
     persistence_type="local",
 
-    style={"width":"200px"}
+    style={"width":"500px", "display": "flex"}
 )
