@@ -10,6 +10,9 @@ SAMPLING_FREQ = 1000
 
 Array = npt.NDArray[np.float64]
 
+chunk_buffers = {}
+chunk_meta = {}
+
 # Global machine state cache
 machine_state = {}
 
@@ -36,14 +39,14 @@ def fft_peak(vib: Array) -> float:
     return float(np.max(spectrum))
 
 
-def calculate_fft(vib: Array) -> list[float]:
+def calculate_fft(vib: Array) -> np.ndarray:
     """Return FFT amplitude spectrum."""
     windowed = vib * signal.windows.hamming(vib.size)
 
     spectrum = np.abs(rfft(windowed))
     spectrum = 2.0 / vib.size * spectrum
 
-    return spectrum.tolist()
+    return spectrum
 
 
 def calculate_rms(vib: Array) -> float:
@@ -89,60 +92,42 @@ def process_message(topic: str, payload: str):
     machine = info["machine"]
     aspect = info["aspect"]
     metric = info["metric"]
-
-    # Vibration pipeline
     if aspect == "vibration":
-        vib = parse_payload(payload)
+        data = parse_payload(payload)
 
-        if not vib or not isinstance(vib, list):
+        if not isinstance(data, dict):
             return
 
-        vib = np.asarray(vib, dtype=float)
-        axis = metric
-
-        rms_val = rms(vib)
-        fft_val = fft_peak(vib)
-        energy = spectral_energy(vib)
-
-        write_feature(machine, f"{axis}_rms", rms_val)
-        write_feature(machine, f"{axis}_fft_peak", fft_val)
-
-        fft_vals = calculate_fft(vib)
-        freqs = np.linspace(0, SAMPLING_FREQ / 2, len(fft_vals))
-
-        # Downsample FFT 
-        step = 4
-        fft_vals = fft_vals[::step]
-        freqs = freqs[::step]
-
-        # Filter frequencies up to 200 Hz
-        mask = freqs <= 200
-        freqs = freqs[mask]
-        fft_vals = np.array(fft_vals)[mask]
-
-        # Top-N frequency components
-        N = 20
-        idx = np.argsort(fft_vals)[-N:]
-
-        freqs_top = freqs[idx]
-        amps_top = fft_vals[idx]
-
-        write_fft(machine, axis, freqs_top, amps_top)
-
-        rpm = get_state(machine, "rpm")
-        temperature = get_state(machine, "temperature")
-        current_mean = get_state(machine, "current_mean")
-        imbalance = get_state(machine, "current_imbalance")
-
-        if None in [rpm, temperature, current_mean, imbalance]:
+        if not all(k in data for k in ["s", "c", "d"]):
             return
+
+        key = f"{machine}_{metric}"
+
+        if key not in chunk_buffers:
+            chunk_buffers[key] = np.zeros(1024, dtype=np.int16)
+            chunk_meta[key] = np.zeros(1024, dtype=bool)
+
+        s = data["s"]
+        c = data["c"]
+        d = data["d"]
+        print(f"{metric}: {s}-{s+c}")
+
+        chunk_buffers[key][s:s+c] = d
+        chunk_meta[key][s:s+c] = True
+        print(np.sum(chunk_meta[key]))
         
-        feature_vector = [rms_val, fft_val, energy, current_mean, imbalance, temperature, rpm]
 
-        score = predict(feature_vector, rpm)
+        if len(d) != c:
+            return
 
-        if score is not None:
-            write_prediction(machine, "combined", score)
+        # If last chunk
+        if np.all(chunk_meta[key]):
+            vib = chunk_buffers[key]
+
+            process_vibration(machine, metric, vib)
+
+            del chunk_buffers[key]
+            del chunk_meta[key]        
 
     elif aspect == "current":
 
@@ -187,3 +172,50 @@ def process_message(topic: str, payload: str):
 
         if metric in ["tempC", "temperature"]:
             update_state(machine, "temperature", value)
+
+def process_vibration(machine, axis, vib):
+    vib = np.asarray(vib, dtype=float) / 500
+    print(np.max(vib))
+    rms_val = rms(vib)
+    fft_val = fft_peak(vib)
+    energy = spectral_energy(vib)
+    write_feature(machine, f"{axis}_rms", rms_val)
+    write_feature(machine, f"{axis}_fft_peak", fft_val)
+
+    fft_vals = calculate_fft(vib)
+    freqs = np.linspace(0, SAMPLING_FREQ / 2, len(fft_vals))
+
+    # Downsample FFT 
+    step = 4
+    fft_vals = fft_vals[::step]
+    freqs = freqs[::step]
+
+    # Filter frequencies up to 200 Hz
+    mask = freqs <= 200
+    freqs = freqs[mask]
+    fft_vals = fft_vals[mask]
+
+    # Top-N frequency components
+    N = 20
+    idx = np.argsort(fft_vals)[-N:]
+    idx = idx[np.argsort(freqs[idx])]
+
+    freqs_top = freqs[idx]
+    amps_top = fft_vals[idx]
+
+    write_fft(machine, axis, freqs_top, amps_top)
+
+    rpm = get_state(machine, "rpm")
+    temperature = get_state(machine, "temperature")
+    current_mean = get_state(machine, "current_mean")
+    imbalance = get_state(machine, "current_imbalance")
+
+    if None in [rpm, temperature, current_mean, imbalance]:
+        return
+        
+    feature_vector = [rms_val, fft_val, energy, current_mean, imbalance, temperature, rpm]
+
+    score = predict(feature_vector, rpm)
+
+    if score is not None:
+        write_prediction(machine, "combined", score)

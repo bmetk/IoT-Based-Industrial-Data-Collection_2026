@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 
 # Simulate RPM values based on machine mode
@@ -31,19 +33,28 @@ def current(rpm, wear):
     return [round(ia, 2), round(ib, 2), round(ic, 2)]
 
 # Simulate vibration signal based on RPM and wear state
-def vibration(rpm, wear):
-    t = np.linspace(0, 1, 128)
+def vibration(rpm, wear, n=1024):
+    t = np.linspace(0, 1, n)
 
     # Define base frequency from RPM
-    freq = rpm / 60
+    freq = rpm / 60  # Hz
 
-    base = np.sin(2 * np.pi * freq * t)
+    base = 2.0 * np.sin(2 * np.pi * freq * t)
+    noise = np.random.normal(0, 0.1 + wear * 0.5, n)
+    noise += 0.05 * np.sin(2 * np.pi * 50 * t)
+    signal = base
+    if wear < 0.2:
+        signal = base + noise 
+    if wear > 0.2:
+        # Imbalance
+        signal += wear * 1.5 * np.sin(2 * np.pi * freq * t)
 
-    noise = np.random.normal(0, 0.2 + (wear ** 1.5) * 0.7, len(t))
+    if wear > 0.4:
+        # Misalignment
+        signal += wear * np.sin(2 * np.pi * 2 * freq * t)
 
-    signal = base + noise
-
-    fault_freq = freq * 2.5
-    signal += wear * np.sin(2 * np.pi * fault_freq * t)
+    if wear > 0.6:
+        # Bearing fault
+        signal += wear * 0.8 * np.sin(2 * np.pi * 3.2 * freq * t)
 
     return signal.tolist()
