@@ -24,7 +24,7 @@ EspMQTTClient client(
     MQTT_ADDR,
     MQTT_USR,
     MQTT_PWD,
-    "openmaps2",
+    "compactmaps2",
     MQTT_PORT);
 
 static constexpr float G_MPS2 = 9.80665f;
@@ -56,7 +56,7 @@ void sendSerialMessage();
 void clearSerialInterconn()
 {
   int x;
-  while (x = SerialInterconn.available() > 0)
+  while ((x = SerialInterconn.available()) > 0)
   {
     while (x--)
       SerialInterconn.read();
