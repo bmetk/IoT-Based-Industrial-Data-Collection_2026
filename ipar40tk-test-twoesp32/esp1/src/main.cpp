@@ -33,7 +33,6 @@
 
 TaskHandle_t Task1;
 TaskHandle_t Task2;
-SemaphoreHandle_t i2cMutex;
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
 #define NEXT_PIN 18
@@ -45,6 +44,25 @@ unsigned long lastButtonTime = 0;
 const int debounceInteval = 250;
 unsigned long previousMillis;
 const unsigned int measurementInterval = 1300;
+
+// Display settings enum
+typedef enum
+{
+  DISPLAY_HOME,
+  DISPLAY_ERROR,
+  DISPLAY_SETTINGS,
+  DISPLAY_MESSAGE
+} DisplayState;
+
+// Struct for passing messages to the display task
+typedef struct
+{
+  DisplayState state;
+  char msg[32];
+} DisplayMessage;
+
+// Queue for display messages
+QueueHandle_t displayQueue;
 
 ////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -79,11 +97,12 @@ void checkEsp1Health()
   {
     setErrorEnable(3, 1);
   }
-  if (prevClientCon != clientCon || prevTemp != temp)
-  {
-    prevClientCon = clientCon;
-    prevTemp = temp;
+  static unsigned long lastUpdate = 0;
 
+  if ((prevClientCon != clientCon || prevTemp != temp) &&
+      millis() - lastUpdate > 500)
+  {
+    lastUpdate = millis();
     firstLevel();
   }
 }
@@ -93,10 +112,12 @@ void checkEsp1Health()
 //------------------------
 volatile uint32_t lastInterruptTimeNext = 0;
 
-void IRAM_ATTR nextOnPress() {
-  uint32_t now = xTaskGetTickCountFromISR();
-  
-  if (now - lastInterruptTimeNext > pdMS_TO_TICKS(120)) {
+void IRAM_ATTR nextOnPress()
+{
+  uint32_t now = millis();
+
+  if (now - lastInterruptTimeNext > pdMS_TO_TICKS(120))
+  {
     portENTER_CRITICAL_ISR(&mux);
     nextPressed = true;
     portEXIT_CRITICAL_ISR(&mux);
@@ -107,10 +128,12 @@ void IRAM_ATTR nextOnPress() {
 
 volatile uint32_t lastInterruptTimeEnter = 0;
 
-void IRAM_ATTR enterOnPress() {
-  uint32_t now = xTaskGetTickCountFromISR();
+void IRAM_ATTR enterOnPress()
+{
+  uint32_t now = millis();
 
-  if (now - lastInterruptTimeEnter > pdMS_TO_TICKS(120)) {
+  if (now - lastInterruptTimeEnter > pdMS_TO_TICKS(120))
+  {
     portENTER_CRITICAL_ISR(&mux);
     enterPressed = true;
     portEXIT_CRITICAL_ISR(&mux);
@@ -124,7 +147,6 @@ void IRAM_ATTR enterOnPress() {
 //----------------------------------------------
 void Task1code(void *pvParameters)
 {
-  Serial.println("Loop alive");
   for (;;)
   {
     bool localNext = false;
@@ -139,20 +161,16 @@ void Task1code(void *pvParameters)
 
     if (localNext)
     {
-      updateState("next");
+      handleMenuEvent(EVENT_NEXT);
     }
     else if (localEnter)
     {
-      updateState("enter");
+      handleMenuEvent(EVENT_ENTER);
     }
-    if(localNext) Serial.println("NEXT PRESSED");
-    checkEsp1Health();
 
-    if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(10)))
-    {
-      firstLevel();
-      xSemaphoreGive(i2cMutex);
-    }
+    menuLoop();
+
+    checkEsp1Health();
 
     vTaskDelay(pdMS_TO_TICKS(20));
   }
@@ -194,6 +212,41 @@ void Task2code(void *pvParameters)
   }
 }
 
+void DisplayTask(void *pvParameters)
+{
+  DisplayMessage msg;
+
+  for (;;)
+  {
+    if (xQueueReceive(displayQueue, &msg, portMAX_DELAY))
+    {
+      oled.clearDisplay();
+
+      switch (msg.state)
+      {
+      case DISPLAY_HOME:
+        homeTab();
+        break;
+
+      case DISPLAY_ERROR:
+        errorTab();
+        break;
+
+      case DISPLAY_SETTINGS:
+        settingsTab();
+        break;
+
+      case DISPLAY_MESSAGE:
+        oled.setCursor(10, 30);
+        oled.print(msg.msg);
+        break;
+      }
+
+      oled.display();
+    }
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 //
 //    Setup
@@ -205,7 +258,8 @@ void setup()
   setCpuFrequencyMhz(240);
 
   Serial.begin(115200);
-  i2cMutex = xSemaphoreCreateMutex();
+  // Create a queue for display messages
+  displayQueue = xQueueCreate(5, sizeof(DisplayMessage));
 
   pinMode(NEXT_PIN, INPUT_PULLUP);
   pinMode(ENTER_PIN, INPUT_PULLUP);
@@ -220,8 +274,20 @@ void setup()
 
   // setting up the display
   setupDisplay();
-  firstLevel();
 
+  xTaskCreatePinnedToCore(
+      DisplayTask,
+      "DisplayTask",
+      4096,
+      NULL,
+      1,
+      NULL,
+      0);
+
+  delay(100);
+  menuInit();
+
+  // create a task that will be executed in the Task1code() function, with priority 1 and executed on core 0
   xTaskCreatePinnedToCore(
       Task1code, /* Task function. */
       "Task1",   /* name of task. */

@@ -12,177 +12,9 @@
 //    Constants / Definitions
 //
 //////////////////////////////////////////////////////////////////////////////////////
-//New menu start
-// Display queue kívülről jön (main.cpp)
-extern QueueHandle_t displayQueue;
 
-//=========================
-// STATE
-//=========================
-static MenuState currentMenu = MENU_HOME;
-static int cursorIndex = 0;
 
-// időzített eseményekhez
-static unsigned long actionStart = 0;
-static bool actionActive = false;
 
-//=========================
-// DISPLAY REQUEST
-//=========================
-void requestDisplayUpdate()
-{
-  DisplayMessage msg;
-
-  switch(currentMenu)
-  {
-    case MENU_HOME:
-      msg.state = DISPLAY_HOME;
-      break;
-
-    case MENU_ERROR:
-      msg.state = DISPLAY_ERROR;
-      break;
-
-    case MENU_SETTINGS:
-    case MENU_SETTINGS_TOGGLE:
-    case MENU_SETTINGS_RESTART:
-      msg.state = DISPLAY_SETTINGS;
-      break;
-
-    case MENU_MESSAGE:
-      msg.state = DISPLAY_MESSAGE;
-      strcpy(msg.msg, "Working...");
-      break;
-  }
-
-  xQueueOverwrite(displayQueue, &msg);
-}
-
-//=========================
-// INIT
-//=========================
-void menuInit()
-{
-  currentMenu = MENU_HOME;
-  cursorIndex = 0;
-  requestDisplayUpdate();
-}
-
-//=========================
-// EVENT HANDLER
-//=========================
-void handleMenuEvent(MenuEvent event)
-{
-  switch(currentMenu)
-  {
-    //----------------------------------
-    case MENU_HOME:
-      if(event == EVENT_NEXT)
-        currentMenu = MENU_ERROR;
-
-      else if(event == EVENT_ENTER)
-        cursorIndex = 0;
-      break;
-
-    //----------------------------------
-    case MENU_ERROR:
-      if(event == EVENT_NEXT)
-        currentMenu = MENU_SETTINGS;
-
-      else if(event == EVENT_ENTER)
-        cursorIndex = 0;
-      break;
-
-    //----------------------------------
-    case MENU_SETTINGS:
-      if(event == EVENT_NEXT)
-        currentMenu = MENU_HOME;
-
-      else if(event == EVENT_ENTER)
-      {
-        currentMenu = MENU_SETTINGS_TOGGLE;
-        cursorIndex = 0;
-      }
-      break;
-
-    //----------------------------------
-    case MENU_SETTINGS_TOGGLE:
-      if(event == EVENT_NEXT)
-        cursorIndex = (cursorIndex + 1) % 3;
-
-      else if(event == EVENT_ENTER)
-      {
-        switch(cursorIndex)
-        {
-          case 0:
-            toggleEsp1();
-            break;
-
-          case 1:
-            toggleEsp2();
-            break;
-
-          case 2:
-            currentMenu = MENU_SETTINGS;
-            break;
-        }
-      }
-      break;
-
-    //----------------------------------
-    case MENU_SETTINGS_RESTART:
-      if(event == EVENT_NEXT)
-        cursorIndex = (cursorIndex + 1) % 3;
-
-      else if(event == EVENT_ENTER)
-      {
-        switch(cursorIndex)
-        {
-          case 0:
-            // ESP1 restart
-            sendSerialMessage(0x02);
-            currentMenu = MENU_MESSAGE;
-            actionStart = millis();
-            actionActive = true;
-            break;
-
-          case 1:
-            // ESP2 restart
-            sendSerialMessage(0x03);
-            currentMenu = MENU_MESSAGE;
-            actionStart = millis();
-            actionActive = true;
-            break;
-
-          case 2:
-            currentMenu = MENU_SETTINGS;
-            break;
-        }
-      }
-      break;
-
-    //----------------------------------
-    case MENU_MESSAGE:
-      // No button events are handled in this state
-      break;
-  }
-
-  requestDisplayUpdate();
-}
-
-//=========================
-// NON-BLOCKING ACTION HANDLER
-//=========================
-void menuLoop()
-{
-  if(actionActive && millis() - actionStart > 2000)
-  {
-    actionActive = false;
-    currentMenu = MENU_SETTINGS;
-    requestDisplayUpdate();
-  }
-}
-//New menu end
 //------------------------------------------------------------------
 // NAVIGATION
 //
@@ -271,6 +103,7 @@ void setupDisplay() {
   oled.clearDisplay();
 
   oled.drawBitmap(33,0, bmetk_bmp, BMETK_WIDTH, BMETK_HEIGHT, WHITE);
+  oled.display();
   delay(3000);
   oled.clearDisplay();
   
@@ -476,6 +309,8 @@ void homeTab() {
       oled.print(homeContent[i][j]);
     }
   }
+
+  oled.display();
 }
 
 
@@ -539,6 +374,8 @@ void errorTab(/*bool nextPage*/) {
       }
     }
   }
+  
+  oled.display();
   //Serial.println("Error page updated");
 }
 
@@ -594,6 +431,8 @@ void settingsTab() {
     oled.setCursor(textWidth+padding, 2 * (offsetY+padding) + headerHeight);
     oled.print(exitLevel);
   }
+
+  oled.display();
 }
 
 
@@ -608,6 +447,7 @@ void drawCursor(int idx){
   oled.setCursor(0, idx*(offsetY+padding) + headerHeight);
 
   oled.print(cursor);
+  oled.display();
 }
 
 
@@ -657,29 +497,35 @@ void toggleEsp2() {
 // When pressing ENTER you can navigate to the available submenus.
 //------------------------------------------------------------------------------------------------------
 void firstLevel() {
-  DisplayMessage msg;
-
   switch (currentState[0]){
 
-    case 0:
-      msg.state = DISPLAY_HOME;
+    case 0: // show Home tab
+      homeTab();
+      currentState[lastIndex] = 0;
       break;
-
-    case 1:
-      msg.state = DISPLAY_ERROR;
+    
+    case 1: // show Errors tab
+      errorTab();
+      currentState[lastIndex] = 0;
       break;
-
-    case 2:
-      msg.state = DISPLAY_SETTINGS;
+    
+    case 2: // show Settings tab
+      settingsTab();
+      if(inSecondLevel)
+        secondLevel();
+      else if(currentState[lastIndex] != 0){
+        currentState[1] = 1;
+        if(!inSecondLevel)
+          currentState[lastIndex] = 0;
+        secondLevel();
+      }
       break;
-
+    
     default:
       currentState[0] = 0;
-      msg.state = DISPLAY_HOME;
+      firstLevel();
       break;
   }
-
-  xQueueSend(displayQueue, &msg, 0);
 }
 
 
@@ -758,10 +604,10 @@ void thirdLevel(){
         drawCursor(0);
         if(currentState[lastIndex] != 0) {
           currentState[lastIndex] = 0;
-          DisplayMessage msg;
-          msg.state = DISPLAY_MESSAGE;
-          strcpy(msg.msg, "Toggling ESP1..");
-          xQueueSend(displayQueue, &msg, 0);
+          oled.clearDisplay();
+          oled.setCursor(16,27);
+          oled.print("Toggling ESP1..");
+          oled.display();
           toggleEsp1();
           nonBlockingDelay(2000);
           thirdLevel();
@@ -772,10 +618,10 @@ void thirdLevel(){
         drawCursor(1);
         if(currentState[lastIndex] != 0) {
           currentState[lastIndex] = 0;
-          DisplayMessage msg;
-          msg.state = DISPLAY_MESSAGE;
-          strcpy(msg.msg, "Toggling ESP2..");
-          xQueueSend(displayQueue, &msg, 0);
+          oled.clearDisplay();
+          oled.setCursor(16,27);
+          oled.print("Toggling ESP2..");
+          oled.display();
           toggleEsp2();
           nonBlockingDelay(2000);
           thirdLevel();
@@ -811,11 +657,11 @@ void thirdLevel(){
         drawCursor(0);
         if(currentState[lastIndex] != 0){
           currentState[lastIndex] = 0;
+          oled.clearDisplay();
+          oled.setCursor(16,27);
           sendSerialMessage(0x01);
-          DisplayMessage msg;
-          msg.state = DISPLAY_MESSAGE;
-          strcpy(msg.msg, "Restarting ESP1...");
-          xQueueSend(displayQueue, &msg, 0);
+          oled.print("Restarting ESP1..");
+          oled.display();
           nonBlockingDelay(2000);
           ESP.restart();
         }
@@ -825,10 +671,10 @@ void thirdLevel(){
         drawCursor(1);
         if(currentState[lastIndex] != 0){
           currentState[lastIndex] = 0;
-          DisplayMessage msg;
-          msg.state = DISPLAY_MESSAGE;
-          strcpy(msg.msg, "Restarting ESP2...");
-          xQueueSend(displayQueue, &msg, 0);
+          oled.clearDisplay();
+          oled.setCursor(16,27);
+          oled.print("Restarting ESP2..");
+          oled.display();
           sendSerialMessage(0x02); // code for restarting esp2
           nonBlockingDelay(2000);
           thirdLevel();
