@@ -24,6 +24,7 @@
 #include <measurement.h>
 #include <connectivity.h>
 #include <parameters.h>
+#include <display.h>
 
 ////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -35,8 +36,6 @@ TaskHandle_t Task1;
 TaskHandle_t Task2;
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
-#define NEXT_PIN 18
-#define ENTER_PIN 19
 volatile bool nextPressed = false;
 volatile bool enterPressed = false;
 unsigned long buttonTime = 0;
@@ -44,22 +43,6 @@ unsigned long lastButtonTime = 0;
 const int debounceInteval = 250;
 unsigned long previousMillis;
 const unsigned int measurementInterval = 1300;
-
-// Display settings enum
-typedef enum
-{
-  DISPLAY_HOME,
-  DISPLAY_ERROR,
-  DISPLAY_SETTINGS,
-  DISPLAY_MESSAGE
-} DisplayState;
-
-// Struct for passing messages to the display task
-typedef struct
-{
-  DisplayState state;
-  char msg[32];
-} DisplayMessage;
 
 // Queue for display messages
 QueueHandle_t displayQueue;
@@ -103,7 +86,6 @@ void checkEsp1Health()
       millis() - lastUpdate > 500)
   {
     lastUpdate = millis();
-    firstLevel();
   }
 }
 
@@ -183,13 +165,27 @@ void Task2code(void *pvParameters)
 {
   previousMillis = millis();
   clearSerialInterconn();
-  sendSerialMessage(0x01);
+  delay(200);
   setRPMTime();
-
+  Esp2Status incomingData;
   for (;;)
   {
     clientLoop();
-    processSerial(checkSerialMessage());
+    if (readStatus(&incomingData))
+    {
+      updateEsp2(incomingData);
+      setErrorEnable(4, 0);
+      setErrorEnable(5, (incomingData.flags & FLAG_MPU) ? 0 : 1);
+    }
+    else
+    {
+      checkEsp2Timeout();
+      if (!esp2.online)
+      {
+        setErrorEnable(4, 1); // Ha timeout volt, jelezzük a hibát!
+        setErrorEnable(5, 1); // Mivel nincs adat, az ACCEL is hiba
+      }
+    }
 
     if (checkSendMeasurements())
     {                          // check if acceleration data is ready
@@ -197,10 +193,10 @@ void Task2code(void *pvParameters)
       sendCurrent();
       getRpm();
       getTempC();
-      // sendSerialMessage(0x01);
+      // sendCommand(0x01);
     }
     // check if acceleration data is ready
-    if (millis() - previousMillis > measurementInterval && isCollectionEnabled() && checkEsp2State() == "OFF")
+    if (millis() - previousMillis > measurementInterval && isCollectionEnabled())
     {
       sendCurrent();
       getRpm();
@@ -209,6 +205,13 @@ void Task2code(void *pvParameters)
       previousMillis = millis();
     }
     vTaskDelay(10);
+  }
+  static unsigned long lastPing = 0;
+
+  if (millis() - lastPing > 5000)
+  {
+    sendCommand(0x00); // ping
+    lastPing = millis();
   }
 }
 
@@ -247,19 +250,24 @@ void DisplayTask(void *pvParameters)
   }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////
-//
-//    Setup
-//
-////////////////////////////////////////////////////////////////////////////////////////
+void statusTask(void *pv)
+{
+  for (;;)
+  {
+    sendCommand(0x00); // heartbeat
+    publishEsp1Status();
+    vTaskDelay(pdMS_TO_TICKS(20000));
+  }
+}
 
+//    Setup
 void setup()
 {
   setCpuFrequencyMhz(240);
 
   Serial.begin(115200);
   // Create a queue for display messages
-  displayQueue = xQueueCreate(5, sizeof(DisplayMessage));
+  displayQueue = xQueueCreate(1, sizeof(DisplayMessage));
 
   pinMode(NEXT_PIN, INPUT_PULLUP);
   pinMode(ENTER_PIN, INPUT_PULLUP);
@@ -284,7 +292,7 @@ void setup()
       NULL,
       0);
 
-  delay(100);
+  vTaskDelay(pdMS_TO_TICKS(50));
   menuInit();
 
   // create a task that will be executed in the Task1code() function, with priority 1 and executed on core 0
@@ -308,6 +316,15 @@ void setup()
       &Task2,    /* Task handle to keep track of created task */
       1);        /* pin task to core 1 */
   delay(500);
+
+  xTaskCreatePinnedToCore(
+      statusTask,
+      "statusTask",
+      4096,
+      NULL,
+      1,
+      NULL,
+      0);
 }
 
 void loop()

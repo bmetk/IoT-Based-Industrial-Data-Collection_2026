@@ -10,6 +10,11 @@
 #define VIBY_TOPIC "factory/lathe01/vibration/mpu9250/vibY"
 #define VIBZ_TOPIC "factory/lathe01/vibration/mpu9250/vibZ"
 
+// ESP2 Status report
+#define STATUS_TOPIC "factory/lathe01/status/esp2"
+unsigned long lastEsp1Response = 0;
+bool esp1Online = false;
+
 #define CHUNK_SIZE 128
 #define DRDY_PIN 27
 #define MPU_ADDR 0x68
@@ -17,6 +22,33 @@
 
 bfs::Mpu9250 imu;
 HardwareSerial SerialInterconn(2);
+SemaphoreHandle_t mqttMutex;
+SemaphoreHandle_t i2cMutex;
+
+#pragma pack(push, 1)
+struct Esp2Status
+{
+  uint8_t header; // 0xAA
+  uint8_t version;
+
+  uint8_t flags;
+
+  uint32_t uptime;
+
+  uint8_t checksum;
+};
+#pragma pack(pop)
+
+#define FLAG_ONLINE 0x01
+#define FLAG_MQTT 0x02
+#define FLAG_MPU 0x04
+#define FLAG_TEMP 0x08
+#define FLAG_CURRENT 0x10
+#define FLAG_RPM 0x20
+#define FLAG_COLLECT 0x40
+
+#define CMD_TOGGLE 0x01
+#define CMD_RESTART 0x02
 
 EspMQTTClient client(
     SSID,
@@ -30,10 +62,10 @@ EspMQTTClient client(
 static constexpr float G_MPS2 = 9.80665f;
 // float accel_scale;
 const int sampleSize = 1024;
-bool DATA_READY = false;
+volatile bool DATA_READY = false;
 volatile bool READ = false;
 volatile int intCounter = 0;
-bool enableCollection = false;
+bool enableCollection = true;
 int idx = 0;
 
 int16_t vRealX[sampleSize];
@@ -51,7 +83,54 @@ void sendChunkedData();
 void publishChunk(const char *topic, int16_t *data, int startIdx, int len);
 void checkSystemHealth();
 void checkSerialMessage();
-void sendSerialMessage();
+uint8_t calcChecksum(Esp2Status &msg);
+void sendStatus();
+void mqttTask(void *pv);
+void sensorTask(void *pv);
+void serialTask(void *pv);
+void statusTask(void *pv);
+
+uint8_t calcChecksum(Esp2Status &msg)
+{
+  uint8_t *ptr = (uint8_t *)&msg;
+  uint8_t sum = 0;
+
+  for (int i = 0; i < sizeof(Esp2Status) - 1; i++)
+    sum ^= ptr[i];
+
+  return sum;
+}
+
+void sendStatus()
+{
+  Esp2Status msg;
+
+  msg.header = 0xAA;
+  msg.version = 1;
+
+  msg.flags = 0;
+  if (true)
+    msg.flags |= FLAG_ONLINE;
+  if (clientOk)
+    msg.flags |= FLAG_MQTT;
+  if (mpuOk)
+    msg.flags |= FLAG_MPU;
+  if (true)
+    msg.flags |= FLAG_TEMP;
+  if (true)
+    msg.flags |= FLAG_CURRENT;
+  if (true)
+    msg.flags |= FLAG_RPM;
+  if (enableCollection)
+    msg.flags |= FLAG_COLLECT;
+
+  msg.uptime = millis();
+
+  msg.checksum = calcChecksum(msg);
+
+  SerialInterconn.write((uint8_t *)&msg, sizeof(msg));
+  SerialInterconn.flush();
+}
 
 void clearSerialInterconn()
 {
@@ -97,54 +176,55 @@ void setup()
   pinMode(DRDY_PIN, INPUT_PULLUP);
   attachInterrupt(DRDY_PIN, onDataReady, RISING);
 
-  // Waiting for connection
-  while (!client.isConnected())
-  {
-    delay(200);
-    client.loop();
-  }
-
-  // sending initial health
-  delay(2000);
-
   // starting serial connection between ESPs
   SerialInterconn.begin(115200, SERIAL_8N1, 16, 17);
   clearSerialInterconn();
-  sendSerialMessage();
   imu.EnableDrdyInt();
   Serial.println("IMU ready");
+
+  mqttMutex = xSemaphoreCreateMutex();
+  i2cMutex = xSemaphoreCreateMutex();
+
+  xTaskCreatePinnedToCore(
+      mqttTask,
+      "mqttTask",
+      8192,
+      NULL,
+      2,
+      NULL,
+      1);
+
+  xTaskCreatePinnedToCore(
+      sensorTask,
+      "sensorTask",
+      4096,
+      NULL,
+      3,
+      NULL,
+      1);
+
+  xTaskCreatePinnedToCore(
+      serialTask,
+      "serialTask",
+      4096,
+      NULL,
+      1,
+      NULL,
+      0);
+
+  xTaskCreatePinnedToCore(
+      statusTask,
+      "statusTask",
+      4096,
+      NULL,
+      1,
+      NULL,
+      0);
 }
 
 void loop()
 {
-  client.loop();
-
-  if (enableCollection)
-  {
-    sendJsonMessage();
-  }
-  else
-  {
-    enableDiagnostics = true;
-  }
-
-  if (enableDiagnostics || !mpuOk)
-  {
-    checkSerialMessage();
-    checkSystemHealth();
-    if (stateChange)
-    {
-      Serial.println("Sending system health update");
-      sendSerialMessage();
-      stateChange = false;
-    }
-    client.loop();
-
-    enableDiagnostics = false;
-    imu.EnableDrdyInt();
-  }
-
-  vTaskDelay(1);
+  vTaskDelay(portMAX_DELAY);
 }
 
 void onConnectionEstablished()
@@ -154,20 +234,18 @@ void onConnectionEstablished()
 
 void collectData()
 {
-
-  if (imu.Read())
+  if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(10)))
   {
-    vRealX[idx] = (int16_t)(imu.accel_x_mps2() * 500);
-    vRealY[idx] = (int16_t)(imu.accel_y_mps2() * 500);
-    vRealZ[idx] = (int16_t)((imu.accel_z_mps2() + G_MPS2) * 500);
+    if (imu.Read())
+    {
+      vRealX[idx] = (int16_t)(imu.accel_x_mps2() * 500);
+      vRealY[idx] = (int16_t)(imu.accel_y_mps2() * 500);
+      vRealZ[idx] = (int16_t)((imu.accel_z_mps2() + G_MPS2) * 500);
 
-    idx++;
-    READ = false;
-  }
-  else
-  {
-    enableDiagnostics = true;
-    return;
+      idx++;
+      READ = false;
+    }
+    xSemaphoreGive(i2cMutex);
   }
 
   if (idx >= sampleSize)
@@ -199,25 +277,20 @@ String arrayToString(float arr[])
 
 void sendJsonMessage()
 {
-  if (READ)
-  {
-    collectData();
-  }
-  else if (DATA_READY)
-  {
+  if (!DATA_READY)
+    return;
 
-    imu.DisableDrdyInt();
+  imu.DisableDrdyInt();
 
-    DATA_READY = false;
-    intCounter = 0;
-    READ = false;
+  DATA_READY = false;
 
-    sendChunkedData();
+  sendChunkedData();
 
-    idx = 0;
+  idx = 0;
+  intCounter = 0;
+  READ = false;
 
-    enableDiagnostics = true;
-  }
+  imu.EnableDrdyInt();
 }
 
 void sendChunkedData()
@@ -229,13 +302,10 @@ void sendChunkedData()
     int len = min(chunkSize, sampleSize - i);
 
     publishChunk(VIBX_TOPIC, vRealX, i, len);
-    client.loop();
 
     publishChunk(VIBY_TOPIC, vRealY, i, len);
-    client.loop();
 
     publishChunk(VIBZ_TOPIC, vRealZ, i, len);
-    client.loop();
   }
 }
 
@@ -267,76 +337,68 @@ void checkSystemHealth()
   // if there was a change, update the state of the system
   if (clientOk != prevClientOk || mpuOk != prevMpuOk)
     stateChange = true;
-}
 
-//------------------------------------------------------------
-// Sending messages to ESP1
-//
-// Codes:
-//    - ONLINE             0x01
-//    - OFFLINE (error)    0x02
-//    - OFFLINE (manula)   0x04
-//    - MPU DOWN           0x08
-//    - MPU UP             0x10
-//
-//------------------------------------------------------------
-void sendSerialMessage()
-{
-  u_char msg = 0;
-  Serial.println("Sending system health: ");
-
-  if (enableCollection && clientOk)
+  if (millis() - lastEsp1Response > 30000)
   {
-    msg += 0x01;
-    Serial.print("ONLINE, ");
+    esp1Online = false;
   }
-  if (!clientOk)
-  {
-    msg += 0x02;
-    Serial.print("OFFLINE (ERR), ");
-  }
-  if (!enableCollection)
-  {
-    msg += 0x04;
-    Serial.print("OFFLINE (MANUAL), ");
-  }
-  if (!mpuOk)
-  {
-    msg += 0x08;
-    Serial.print("MPU DOWN, ");
-  }
-  if (mpuOk)
-  {
-    msg += 0x10;
-    Serial.print("MPU UP, ");
-  }
-
-  SerialInterconn.write(msg);
 }
 
 //----------------------------------
 // Execute instructions sent by ESP1
 //----------------------------------
+void handleCommand(uint8_t cmd)
+{
+  lastEsp1Response = millis();
+  esp1Online = true;
+  switch (cmd)
+  {
+  case 0x00:
+    // HeartBeat
+    break;
+  case 0x01:
+    Serial.println("Toggle collection");
+    enableCollection = !enableCollection;
+    break;
+
+  case CMD_RESTART:
+    Serial.println("Restarting ESP2");
+    ESP.restart();
+    break;
+  }
+}
+
 void checkSerialMessage()
 {
-  if (SerialInterconn.available() > 0)
+  static uint8_t state = 0;
+  static uint8_t cmd;
+  static uint8_t crc;
+
+  while (SerialInterconn.available())
   {
-    u_char msg = SerialInterconn.read();
+    uint8_t b = SerialInterconn.read();
 
-    switch (msg)
+    switch (state)
     {
-    case 0x01:
-      enableCollection = !enableCollection;
-      idx = 0;
-      stateChange = true;
+    case 0: // HEADER
+      if (b == 0xAA)
+        state = 1;
       break;
 
-    case 0x02:
-      Serial.println("Restarting ESP2");
-      ESP.restart();
+    case 1: // CMD
+      cmd = b;
+      state = 2;
       break;
 
-    default:
+    case 2: // CRC
+      crc = b;
+
+      if ((cmd ^ 0xAA) == crc) // CRC check
+      {
+        handleCommand(cmd);
+      }
+
+      state = 0;
       break;
     }
   }
@@ -358,7 +420,84 @@ void publishChunk(const char *topic, int16_t *data, int startIdx, int len)
   }
 
   size_t n = serializeJson(doc, buffer);
+  if (xSemaphoreTake(mqttMutex, pdMS_TO_TICKS(10)))
+  {
+    Serial.println("Publishing...");
+    client.publish(topic, buffer, n);
+    xSemaphoreGive(mqttMutex);
+  }
+  else
+  {
+    Serial.println("MQTT mutex FAIL");
+  }
+  vTaskDelay(pdMS_TO_TICKS(10));
+}
 
-  client.publish(topic, buffer, n);
-  vTaskDelay(2);
+void publishSystemStatus()
+{
+  StaticJsonDocument<256> doc;
+
+  doc["esp2"] = true;
+  doc["mqtt"] = clientOk;
+  doc["mpu"] = mpuOk;
+  doc["esp1"] = esp1Online;
+
+  char buffer[256];
+  size_t n = serializeJson(doc, buffer);
+
+  if (xSemaphoreTake(mqttMutex, pdMS_TO_TICKS(10)))
+  {
+    client.publish(STATUS_TOPIC, buffer, n);
+    xSemaphoreGive(mqttMutex);
+  }
+}
+
+void mqttTask(void *pv)
+{
+  for (;;)
+  {
+    client.loop();
+
+    if (enableCollection && client.isConnected())
+    {
+      sendJsonMessage();
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(5));
+  }
+}
+
+void sensorTask(void *pv)
+{
+  for (;;)
+  {
+    if (READ)
+    {
+      collectData();
+    }
+
+    vTaskDelay(1);
+  }
+}
+
+void serialTask(void *pv)
+{
+  for (;;)
+  {
+    checkSerialMessage();
+
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+}
+
+void statusTask(void *pv)
+{
+  for (;;)
+  {
+    checkSystemHealth();
+    publishSystemStatus();
+    sendStatus();
+
+    vTaskDelay(pdMS_TO_TICKS(10000));
+  }
 }

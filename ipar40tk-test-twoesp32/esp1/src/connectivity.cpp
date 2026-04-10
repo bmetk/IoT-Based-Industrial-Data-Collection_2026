@@ -71,9 +71,15 @@ void sendMqttMessage(char* topic, const char* msg){
 
 
 
-void sendSerialMessage(u_char msg) {
-  SerialInterconn.write(msg);
-  //Serial.print("Message sent: 0x"); Serial.println(msg, HEX);
+void sendCommand(uint8_t cmd)
+{
+  uint8_t frame[3];
+
+  frame[0] = 0xAA;
+  frame[1] = cmd;
+  frame[2] = cmd ^ 0xAA;
+
+  SerialInterconn.write(frame, 3);
 }
 
 

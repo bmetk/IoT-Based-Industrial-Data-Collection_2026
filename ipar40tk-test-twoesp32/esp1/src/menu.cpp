@@ -1,19 +1,49 @@
 #include <Arduino.h>
 #include <menu.h>
 #include <parameters.h>
+#include <measurement.h>
 #include <connectivity.h>
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_GFX.h>
 #include <Wire.h>
-
+#include <display.h>
+#include <ArduinoJson.hpp>
+#include <ArduinoJson.h>
+#include <connectivity.h>
 
 //////////////////////////////////////////////////////////////////////////////////////
 //
 //    Constants / Definitions
 //
 //////////////////////////////////////////////////////////////////////////////////////
-//New menu start
-// Display queue kívülről jön (main.cpp)
+void toggleEsp1();
+void toggleEsp2();
+const char *ok(bool v);
+
+uint8_t calcChecksum(Esp2Status &msg);
+
+#define ESP1_STATUS_TOPIC "factory/lathe01/status/esp1"
+
+Esp2State esp2;
+
+uint8_t calcChecksum(Esp2Status &msg)
+{
+  uint8_t *ptr = (uint8_t *)&msg;
+  uint8_t sum = 0;
+
+  for (int i = 0; i < sizeof(Esp2Status) - 1; i++)
+    sum ^= ptr[i];
+
+  return sum;
+}
+
+const char *ok(bool v)
+{
+  return v ? "OK" : "ERR";
+}
+
+// New menu start
+//  Display queue kívülről jön (main.cpp)
 extern QueueHandle_t displayQueue;
 
 //=========================
@@ -21,6 +51,8 @@ extern QueueHandle_t displayQueue;
 //=========================
 static MenuState currentMenu = MENU_HOME;
 static int cursorIndex = 0;
+MenuState getCurrentMenu() { return currentMenu; }
+int getCursorIndex() { return cursorIndex; }
 
 // időzített eseményekhez
 static unsigned long actionStart = 0;
@@ -33,29 +65,29 @@ void requestDisplayUpdate()
 {
   DisplayMessage msg;
 
-  switch(currentMenu)
+  switch (currentMenu)
   {
-    case MENU_HOME:
-      msg.state = DISPLAY_HOME;
-      break;
+  case MENU_HOME:
+    msg.state = DISPLAY_HOME;
+    break;
 
-    case MENU_ERROR:
-      msg.state = DISPLAY_ERROR;
-      break;
+  case MENU_ERROR:
+    msg.state = DISPLAY_ERROR;
+    break;
 
-    case MENU_SETTINGS:
-    case MENU_SETTINGS_TOGGLE:
-    case MENU_SETTINGS_RESTART:
-      msg.state = DISPLAY_SETTINGS;
-      break;
+  case MENU_SETTINGS:
+  case MENU_SETTINGS_TOGGLE:
+  case MENU_SETTINGS_RESTART:
+    msg.state = DISPLAY_SETTINGS;
+    break;
 
-    case MENU_MESSAGE:
-      msg.state = DISPLAY_MESSAGE;
-      strcpy(msg.msg, "Working...");
-      break;
+  case MENU_MESSAGE:
+    msg.state = DISPLAY_MESSAGE;
+    strcpy(msg.msg, "Working...");
+    break;
   }
 
-  xQueueOverwrite(displayQueue, &msg);
+  xQueueSend(displayQueue, &msg, 0);
 }
 
 //=========================
@@ -73,98 +105,95 @@ void menuInit()
 //=========================
 void handleMenuEvent(MenuEvent event)
 {
-  switch(currentMenu)
+  switch (currentMenu)
   {
-    //----------------------------------
-    case MENU_HOME:
-      if(event == EVENT_NEXT)
-        currentMenu = MENU_ERROR;
+  //----------------------------------
+  case MENU_HOME:
+    if (event == EVENT_NEXT)
+      currentMenu = MENU_ERROR;
 
-      else if(event == EVENT_ENTER)
-        cursorIndex = 0;
-      break;
+    else if (event == EVENT_ENTER)
+      cursorIndex = 0;
+    break;
 
-    //----------------------------------
-    case MENU_ERROR:
-      if(event == EVENT_NEXT)
+  //----------------------------------
+  case MENU_ERROR:
+    if (event == EVENT_NEXT)
+      currentMenu = MENU_SETTINGS;
+
+    else if (event == EVENT_ENTER)
+      cursorIndex = 0;
+    break;
+
+  //----------------------------------
+  case MENU_SETTINGS:
+    if (event == EVENT_NEXT)
+      currentMenu = MENU_HOME;
+
+    else if (event == EVENT_ENTER)
+    {
+      currentMenu = MENU_SETTINGS_TOGGLE;
+      cursorIndex = 0;
+    }
+    break;
+
+  //----------------------------------
+  case MENU_SETTINGS_TOGGLE:
+    if (event == EVENT_NEXT)
+      cursorIndex = (cursorIndex + 1) % 3;
+
+    else if (event == EVENT_ENTER)
+    {
+      switch (cursorIndex)
+      {
+      case 0:
+        toggleEsp1();
+        break;
+
+      case 1:
+        toggleEsp2();
+        break;
+
+      case 2:
         currentMenu = MENU_SETTINGS;
-
-      else if(event == EVENT_ENTER)
-        cursorIndex = 0;
-      break;
-
-    //----------------------------------
-    case MENU_SETTINGS:
-      if(event == EVENT_NEXT)
-        currentMenu = MENU_HOME;
-
-      else if(event == EVENT_ENTER)
-      {
-        currentMenu = MENU_SETTINGS_TOGGLE;
-        cursorIndex = 0;
+        break;
       }
-      break;
+    }
+    break;
 
-    //----------------------------------
-    case MENU_SETTINGS_TOGGLE:
-      if(event == EVENT_NEXT)
-        cursorIndex = (cursorIndex + 1) % 3;
+  //----------------------------------
+  case MENU_SETTINGS_RESTART:
+    if (event == EVENT_NEXT)
+      cursorIndex = (cursorIndex + 1) % 3;
 
-      else if(event == EVENT_ENTER)
+    else if (event == EVENT_ENTER)
+    {
+      switch (cursorIndex)
       {
-        switch(cursorIndex)
-        {
-          case 0:
-            toggleEsp1();
-            break;
+      case 0:
+        // ESP1 restart
+        ESP.restart();
+        break;
 
-          case 1:
-            toggleEsp2();
-            break;
+      case 1:
+        // ESP2 restart
+        sendCommand(CMD_RESTART);
+        currentMenu = MENU_MESSAGE;
+        actionStart = millis();
+        actionActive = true;
+        break;
 
-          case 2:
-            currentMenu = MENU_SETTINGS;
-            break;
-        }
+      case 2:
+        currentMenu = MENU_SETTINGS;
+        break;
       }
-      break;
+    }
+    break;
 
-    //----------------------------------
-    case MENU_SETTINGS_RESTART:
-      if(event == EVENT_NEXT)
-        cursorIndex = (cursorIndex + 1) % 3;
-
-      else if(event == EVENT_ENTER)
-      {
-        switch(cursorIndex)
-        {
-          case 0:
-            // ESP1 restart
-            sendSerialMessage(0x02);
-            currentMenu = MENU_MESSAGE;
-            actionStart = millis();
-            actionActive = true;
-            break;
-
-          case 1:
-            // ESP2 restart
-            sendSerialMessage(0x03);
-            currentMenu = MENU_MESSAGE;
-            actionStart = millis();
-            actionActive = true;
-            break;
-
-          case 2:
-            currentMenu = MENU_SETTINGS;
-            break;
-        }
-      }
-      break;
-
-    //----------------------------------
-    case MENU_MESSAGE:
-      // No button events are handled in this state
-      break;
+  //----------------------------------
+  case MENU_MESSAGE:
+    // No button events are handled in this state
+    break;
   }
 
   requestDisplayUpdate();
@@ -175,41 +204,33 @@ void handleMenuEvent(MenuEvent event)
 //=========================
 void menuLoop()
 {
-  if(actionActive && millis() - actionStart > 2000)
+  if (actionActive && millis() - actionStart > 2000)
   {
     actionActive = false;
     currentMenu = MENU_SETTINGS;
     requestDisplayUpdate();
   }
 }
-//New menu end
+// New menu end
 //------------------------------------------------------------------
-// NAVIGATION
+//  NAVIGATION
 //
-// The menu system uses a finite state state machine, where 
-// the current state is stored in an array. The first element
-// corresponds to the highest menu level and the last to the lowest.
+//  The menu system uses a finite state state machine, where
+//  the current state is stored in an array. The first element
+//  corresponds to the highest menu level and the last to the lowest.
 //------------------------------------------------------------------
-int currentState[4] = {0,0,0,0};
-const int lastIndex = sizeof(currentState)/sizeof(currentState[0]) -1;
-const String menuTabs[3] = {"HOME", "ERRORS", "SETTINGS"};
-const char cursor = '>';
-const String exitLevel = "BACK";
-bool inSecondLevel = false;
-bool inThirdLevel = false;
-int prevCursorY = headerHeight;
 
-bool sendMeasurements = false;
+bool sendMeasurements = true;
 
 //-----------------
 // HOME TAB CONTENT
 //-----------------
-const String espHealth[3] = {"OK", "ERR", "OFF"};
+const char *espHealth[] = {"ON", "ERR", "OFF"};
 const int homeRow = 3;
 const int homeCol = 3;
-//String espStatus[2][2] = {{espHealth[0], espHealth[0]}, 
-//                        {espHealth[0], espHealth[0]}};
-String homeContent[homeRow][homeCol] = {{"",      "ONLINE",        "SENSOR"},
+// String espStatus[2][2] = {{espHealth[0], espHealth[0]},
+//                         {espHealth[0], espHealth[0]}};
+String homeContent[homeRow][homeCol] = {{"", "ONLINE", "SENSOR"},
                                         {"ESP 1", espHealth[0], espHealth[0]},
                                         {"ESP 2", espHealth[0], espHealth[0]}};
 
@@ -222,13 +243,12 @@ String homeContent[homeRow][homeCol] = {{"",      "ONLINE",        "SENSOR"},
 const int errorCount = 6;
 const String errorContent[errorCount] = {"ESP1 CON",
                                          "CURRENT",
-                                         "OPTO", 
-                                         "THERMO", 
+                                         "OPTO",
+                                         "THERMO",
                                          "ESP2 CON",
                                          "ACCEL"};
 const String noErrors = "NO ERRORS";
-int errorEnable[errorCount] = {1,0,0,1,1,1};
-
+int errorEnable[errorCount] = {1, 0, 0, 1, 1, 1};
 
 //---------------------------------------
 // SETTINGS TAB CONTENT
@@ -245,19 +265,15 @@ const String settingsContent[settingsRow][settingsCol] = {{"TOGGLE ONLINE", "TOG
                                                           {"RESTART MCU", "RESTART ESP1", "RESTART ESP2"}};
 const String settingsSubmenu[settingsRow] = {"TOGGLE", "RESTART"};
 
-
 //----------------------------
 // Flags
 //----------------------------
 bool enableDataCollection = true;
 
-
 //-----------------------------------------------
 // create an OLED display object connected to I2C
 //-----------------------------------------------
 Adafruit_SSD1306 oled(SCREEN_W, SCREEN_H, &Wire, -1);
-
-
 
 //////////////////////////////////////////////////////////////////////////////////////
 //
@@ -265,20 +281,19 @@ Adafruit_SSD1306 oled(SCREEN_W, SCREEN_H, &Wire, -1);
 //
 //////////////////////////////////////////////////////////////////////////////////////
 
-void setupDisplay() {
+void setupDisplay()
+{
   oled.begin(SSD1306_SWITCHCAPVCC, DISP_ADDR);
   delay(2000);
   oled.clearDisplay();
 
-  oled.drawBitmap(33,0, bmetk_bmp, BMETK_WIDTH, BMETK_HEIGHT, WHITE);
+  oled.drawBitmap(33, 0, bmetk_bmp, BMETK_WIDTH, BMETK_HEIGHT, WHITE);
   delay(3000);
   oled.clearDisplay();
-  
+
   oled.setTextSize(textSize);
   oled.setTextColor(WHITE);
 }
-
-
 
 //////////////////////////////////////////////////////////////////////////////////////
 //
@@ -286,77 +301,33 @@ void setupDisplay() {
 //
 //////////////////////////////////////////////////////////////////////////////////////
 
-
-
-//--------------------------------------------------------------
-// Prints the current state in the state machine (for debugging)
-//--------------------------------------------------------------
-void printState() {
-  Serial.print("state: "); 
-  Serial.print(currentState[0]); Serial.print(":"); 
-  Serial.print(currentState[1]); Serial.print(":"); 
-  Serial.print(currentState[2]); Serial.print(":"); 
-  Serial.println(currentState[3]);
-}
-
-
-
-//-----------------------------------------------
-// Updates the current state after a button press
-//-----------------------------------------------
-void updateState(char* btnId) {
-  if(strcmp(btnId, "next") == 0) {
-    if(!inSecondLevel && !inThirdLevel)
-      currentState[0]++;
-    else if(inSecondLevel && !inThirdLevel)
-      currentState[1]++;
-    else
-      currentState[2]++;
-  }
-  else if(strcmp(btnId, "enter") == 0) {
-    currentState[lastIndex]++;
-  }
-  firstLevel();
-}
-
-
-//---------------------------------------
-// Creating a non-blocking delay function
-//---------------------------------------
-unsigned long prevMillis = 0;
-void nonBlockingDelay(int interval = 2000) {
-  //unsigned long currentMillis = millis();
-  prevMillis = millis();
-
-  while (millis() - prevMillis <= interval){};
-} 
-
-
-
 //----------------------------------------------
 //  Checking and setting measurement sync flag
 //----------------------------------------------
-bool checkSendMeasurements() {
+bool checkSendMeasurements()
+{
   return sendMeasurements;
 }
 
-void resetSendMeasurements() {
+void resetSendMeasurements()
+{
   sendMeasurements = false;
 }
 
-String checkEsp2State() {
+String checkEsp2State()
+{
   return homeContent[2][1];
 }
 
-bool isCollectionEnabled() {
+bool isCollectionEnabled()
+{
   return enableDataCollection;
 }
 
-void setErrorEnable(int index, int value) {
+void setErrorEnable(int index, int value)
+{
   errorEnable[index] = value;
 }
-
-
 
 //------------------------------------------------------------
 // Checks Serial2 for messages and updates content accordingly
@@ -370,485 +341,347 @@ void setErrorEnable(int index, int value) {
 //
 //------------------------------------------------------------
 u_char prevMsg = 0;
-void processSerial(u_char msg) {
-
-  if(msg != 0 && msg <= 0x1F) {
-    //Serial.print("Message: 0x"); Serial.println(msg, HEX);
-
-    if(msg & 0x01) {
-      homeContent[2][1] = espHealth[0];
-      errorEnable[4] = 0;      
-      //Serial.print(".  ONLINE");
-    }
-    if(msg & 0x02) {
-      homeContent[2][1] = espHealth[1];
-      errorEnable[4] = 1;
-      //Serial.print(".  OFFLINE (ERR)");
-      //Serial.println(errorEnable[4]);
-    }
-    if(msg & 0x04) {
-      homeContent[2][1] = espHealth[2];
-      errorEnable[4] = 0;
-      //Serial.print(".  OFFLINE (MANUAL)");
-    }
-    if(msg & 0x08) {
-      homeContent[2][2] = espHealth[1];
-      errorEnable[5] = 1;
-      //Serial.print(".  MPU DOWN");
-    }
-    if(msg & 0x10) {
-      homeContent[2][2] = espHealth[0];
-      errorEnable[5] = 0;
-      //Serial.print(".  MPU UP");
-    }
-    //Serial.println("");
-    //for(int i=0; i<errorCount; i++) {
-      //Serial.print(errorEnable[i]);
-      //Serial.print(", ");
-    //}
-    //Serial.println("");
-    firstLevel();
-  }
-  else if(msg == 0xAA) {
-    //Serial.println("Accel data ready");
-    sendMeasurements = true;
-  }
-}
-
-
 
 //-------------------------------
 // Prints the current tabs header
 //-------------------------------
-void printTabHeader(String title) {
+void printTabHeader(String title)
+{
   oled.setCursor(0, 0);
-  oled.fillRect(0, 0, SCREEN_W-1, textHeight+2*padding, WHITE);
+  oled.fillRect(0, 0, SCREEN_W - 1, textHeight + 2 * padding, WHITE);
   oled.setCursor(padding, padding);
   oled.setTextColor(BLACK);
   oled.print(title);
   oled.setTextColor(WHITE);
 }
 
+void updateHomeData()
+{
+  /*
+   * Displays general information about the microcontrollers.
+   * Upon entering, you can view detailed info on each ESP.
+   */
+  for (int i = 0; i < errorCount; i++)
+  {
+    if (errorEnable[i] != 0)
+    {
+      if (i == 0)
+      {
+        homeContent[1][1] = espHealth[1];
+      }
+      if (i >= 1 && i <= 3)
+      {
+        homeContent[1][2] = espHealth[1];
+      }
+    }
+  }
+  if (errorEnable[0] == 0 && homeContent[1][1] != espHealth[2])
+  {
+    homeContent[1][1] = espHealth[0];
+  }
+  if (errorEnable[1] == 0 && errorEnable[2] == 0 && errorEnable[3] == 0)
+  {
+    homeContent[1][2] = espHealth[0];
+  }
 
+  if (!esp2.online)
+  {
+    homeContent[2][1] = espHealth[2]; // OFF
+    homeContent[2][2] = espHealth[2]; // OFF
+  }
+  else
+  {
+    // ONLINE / MQTT
+    homeContent[2][1] = esp2.mqttOk ? espHealth[0] : espHealth[1];
+
+    // SENSOR
+    homeContent[2][2] = esp2.mpuOk ? espHealth[0] : espHealth[1];
+
+    // COLLECTIN OFF
+    if (!esp2.collecting)
+    {
+      homeContent[2][1] = espHealth[2]; // OFF
+    }
+  }
+}
 
 //-----------------------------------------------
 // Assembles the Home tab with up to date content
 //-----------------------------------------------
-void homeTab() {
-  /*
-  * Displays general information about the microcontrollers.
-  * Upon entering, you can view detailed info on each ESP.
-  */
-  for (int i=0; i<errorCount; i++) {
-    if(errorEnable[i] != 0) {
-      if(i==0) {
-        homeContent[1][1]=espHealth[1];
-      }
-      if(i>=1&& i<=3) {
-        homeContent[1][2]=espHealth[1];
-      }
-    }
-  }
-
-  if(errorEnable[0] == 0 && homeContent[1][1] != espHealth[2]) {
-    homeContent[1][1] = espHealth[0];
-  } 
-  if(errorEnable[1] == 0 && errorEnable[2] == 0 && errorEnable[3] == 0) {
-    homeContent[1][2] = espHealth[0];
-  }
-
-  // screen header
+void homeTab()
+{
   oled.clearDisplay();
-  printTabHeader(menuTabs[0]);
-  
-  // drawing the grid
-  oled.drawLine(SCREEN_W/3,   headerHeight,    SCREEN_W/3,   SCREEN_H-1, WHITE); // vertical
-  oled.drawLine(2*SCREEN_W/3-1, headerHeight,    2*SCREEN_W/3-1, SCREEN_H-1, WHITE); //vertical
-  oled.drawLine(0,            headerHeight+offsetY,  SCREEN_W-1,     headerHeight+offsetY,  WHITE); // horisontal
-  
-  
-  // content of the grid
-  for(int i=0; i<homeRow; i++){
-    for(int j=0; j<homeCol; j++){
-      int x = j * offsetX + 2*textSize;
-      int y = i * (offsetY+2*textSize) + headerHeight;
+  printTabHeader("HOME");
+
+  // grid
+  oled.drawLine(SCREEN_W / 3, headerHeight, SCREEN_W / 3, SCREEN_H - 1, WHITE);
+  oled.drawLine(2 * SCREEN_W / 3 - 1, headerHeight, 2 * SCREEN_W / 3 - 1, SCREEN_H - 1, WHITE);
+  oled.drawLine(0, headerHeight + offsetY, SCREEN_W - 1, headerHeight + offsetY, WHITE);
+  updateHomeData();
+  // content
+  for (int i = 0; i < homeRow; i++)
+  {
+    for (int j = 0; j < homeCol; j++)
+    {
+      int x = j * offsetX + 2 * textSize;
+      int y = i * (offsetY + 2 * textSize) + headerHeight;
+
       oled.setCursor(x, y);
       oled.print(homeContent[i][j]);
     }
   }
+  // renderEsp2();
 }
-
-
 
 //------------------------------------------------------
 // Assembles the Error tab's content with current issues
 //------------------------------------------------------
-void errorTab(/*bool nextPage*/) {
-  /*
-  * Lists errors regarding the ESP-s. You can cycle through
-  * them and take actions to solve the issues.
-  */
-
-  // screen header
+void errorTab()
+{
   oled.clearDisplay();
-  printTabHeader(menuTabs[1]);
+  printTabHeader("ERRORS");
 
-  bool errESP1 = false, errESP2 = false;
-  int errorNumber = 0;
   int spacing = 0;
-  int x = textWidth+padding;
+  int x = textWidth + padding;
   int y = 0;
-  
-  // check for errors
-  for(int i=0; i<errorCount; i++){
-    if(errorEnable[i] != 0) {
+  int errorNumber = 0;
+
+  for (int i = 0; i < errorCount; i++)
+    if (errorEnable[i])
       errorNumber++;
-      
 
-      if(i<4) {
-        errESP1 = true;
-      }
-      else {
-        errESP2 = true;
-      }
-    }
-  }
-
-
-  if(errorNumber == 0){
-    oled.setCursor(padding, SCREEN_H-1-textHeight);
+  if (errorNumber == 0)
+  {
+    oled.setCursor(padding, SCREEN_H - 1 - textHeight);
     oled.print(noErrors);
+    return;
   }
-  else {
 
-    // draw column divider
-    oled.drawLine(SCREEN_W/2-1, headerHeight,    SCREEN_W/2-1, SCREEN_H-1, WHITE);
+  oled.drawLine(SCREEN_W / 2 - 1, headerHeight, SCREEN_W / 2 - 1, SCREEN_H - 1, WHITE);
 
-    for(int i=0; i<errorCount; i++) {
-      y = spacing * (offsetY+padding) + headerHeight;
+  for (int i = 0; i < errorCount; i++)
+  {
+    if (errorEnable[i])
+    {
+      y = spacing * (offsetY + padding) + headerHeight;
 
-      if(errorEnable[i] != 0) {
-        //Serial.print("Error found at index "); Serial.println(i);
-        oled.setCursor(x, y);
-        oled.print(errorContent[i]);
-        spacing++;
-      }
-      if(i == 3) {
-        x = x + SCREEN_W/2-1;
+      oled.setCursor(x, y);
+      oled.print(errorContent[i]);
+
+      spacing++;
+
+      if (i == 3)
+      {
+        x += SCREEN_W / 2 - 1;
         spacing = 0;
       }
     }
   }
-  //Serial.println("Error page updated");
 }
-
-
 
 //------------------------------------------------------
 // Prints the Settings tab and it's submenus accordingly
 //------------------------------------------------------
-void settingsTab() {
-  /*
-  * Gives the user tools for manual actions (start/stop data
-  * collection, sensors, connectivity, etc.)
-  */
+extern MenuState currentMenu;
+extern int cursorIndex;
 
-  // screen header
+void settingsTab()
+{
   oled.clearDisplay();
+  printTabHeader("SETTINGS");
+  MenuState state = getCurrentMenu();
+  int cursor = getCursorIndex();
+  String esp1StateStr = enableDataCollection ? "ON" : "OFF";
+  String esp2StateStr = esp2.collecting ? "ON" : "OFF";
+  switch (state)
+  {
+  //----------------------------------
+  case MENU_SETTINGS:
+    oled.setCursor(20, headerHeight);
+    oled.print("CONTROL");
 
-  String submenu="";
-  if(inThirdLevel && currentState[1] == 1)
-    submenu = "/" + settingsSubmenu[0];
-  else if(inThirdLevel & currentState[1] == 2)
-    submenu = "/" + settingsSubmenu[1];
+    oled.setCursor(20, headerHeight + offsetY);
+    oled.print("ESP'S");
+    break;
 
-  printTabHeader(menuTabs[2] + submenu);
+  //----------------------------------
+  case MENU_SETTINGS_TOGGLE:
+    oled.setCursor(20, headerHeight);
+    oled.println("Toggle ESP1: " + esp1StateStr);
 
-  // print settings according to current State in the state machine
-  
-  // settings second level
-  if(currentState[2] == 0){
-    for(int i=0; i<settingsRow; i++){
-      oled.setCursor(textWidth+padding, i * (offsetY+padding) + headerHeight);
-      oled.print(settingsContent[i][0]);
-    }
-  }
-  
+    oled.setCursor(20, headerHeight + offsetY);
+    oled.println("Toggle ESP2: " + esp2StateStr);
 
-  // settings third level - toggle
-  if(currentState[1] == 1 && inThirdLevel){
-    for(int i=1; i<settingsCol; i++){
-      oled.setCursor(textWidth+padding, (i-1) * (offsetY+padding) + headerHeight);
-      oled.print(settingsContent[0][i]);
-    }
-  }
-  // settings third level - restart
-  else if(currentState[1] == 2 && inThirdLevel){
-    for(int i=1; i<settingsCol; i++){
-      oled.setCursor(textWidth+padding, (i-1) * (offsetY+padding) + headerHeight);
-      oled.print(settingsContent[1][i]);
-    }
-  }
+    oled.setCursor(20, headerHeight + 2 * offsetY);
+    oled.print("BACK");
 
-  if(inSecondLevel || inThirdLevel) {
-    oled.setCursor(textWidth+padding, 2 * (offsetY+padding) + headerHeight);
-    oled.print(exitLevel);
+    drawCursor(cursorIndex);
+    break;
+
+  //----------------------------------
+  case MENU_SETTINGS_RESTART:
+    oled.setCursor(20, headerHeight);
+    oled.print("Restart ESP1");
+
+    oled.setCursor(20, headerHeight + offsetY);
+    oled.print("Restart ESP2");
+
+    oled.setCursor(20, headerHeight + 2 * offsetY);
+    oled.print("BACK");
+
+    drawCursor(cursorIndex);
+    break;
+
+  default:
+    break;
   }
 }
-
-
-
 
 //-------------------------------------------------------------------------
 // Draws the cursor in front of the current line (only after entering menu)
 //-------------------------------------------------------------------------
-void drawCursor(int idx){
-  // deleting previous cursor
-  oled.fillRect(0, headerHeight, textWidth-1, SCREEN_H-1, BLACK);
-  oled.setCursor(0, idx*(offsetY+padding) + headerHeight);
+void drawCursor(int idx)
+{
+  oled.fillRect(0, headerHeight, textWidth - 1, SCREEN_H - 1, BLACK);
 
-  oled.print(cursor);
+  oled.setCursor(0, idx * (offsetY + padding) + headerHeight);
+  oled.print(">");
 }
-
-
-
-//=======================================================================================
-//
-// This section contains the state machine logic with the correponding action's functions
-//
-//=======================================================================================
-
-
-void secondLevel();
-void thirdLevel();
-
-
 
 //----------------------------------------------------------
 // Toggle measurement collection and publishing for each esp
 //----------------------------------------------------------
-void toggleEsp1() {
+void toggleEsp1()
+{
+  enableDataCollection = !enableDataCollection;
+
+  if (!enableDataCollection)
+  {
+    homeContent[1][1] = espHealth[2]; // OFF
+  }
+  else
+  {
+    homeContent[1][1] = espHealth[0]; // ON
+  }
+}
+
+void toggleEsp2()
+{
   /*
   - set flag to enable/disable measurements (suspend/resume task2)
   - set home tab content to ok/off
   */
-  if(homeContent[1][1] != espHealth[2]) {
-    homeContent[1][1] = espHealth[2];
-    enableDataCollection = false;
-  }
-  else if(homeContent[1][1] == espHealth[2]) {
-    homeContent[1][1] = espHealth[0];
-    enableDataCollection = true;
-  }
+  sendCommand(0x01); // code for toggle
 }
 
-void toggleEsp2() {
-  /*
-  - set flag to enable/disable measurements (suspend/resume task2)
-  - set home tab content to ok/off
-  */
-  sendSerialMessage(0x01); // code for toggle
-}
+bool readStatus(Esp2Status *dest)
+{
+  static uint8_t buffer[sizeof(Esp2Status)];
+  static uint8_t index = 0;
+  static unsigned long lastByteTime = 0;
 
+  while (SerialInterconn.available())
+  {
+    uint8_t b = SerialInterconn.read();
+    lastByteTime = millis();
 
+    if (index == 0 && b != 0xAA)
+      continue;
 
-//------------------------------------------------------------------------------------------------------
-// This is the entrypoint of the state machine. When NEXT gets pressed, it cycles through the main tabs.
-// When pressing ENTER you can navigate to the available submenus.
-//------------------------------------------------------------------------------------------------------
-void firstLevel() {
-  DisplayMessage msg;
+    buffer[index++] = b;
 
-  switch (currentState[0]){
+    if (index == sizeof(Esp2Status))
+    {
+      index = 0; // Kész, alaphelyzet a következőnek
+      Esp2Status tempMsg;
+      memcpy(&tempMsg, buffer, sizeof(Esp2Status));
 
-    case 0:
-      msg.state = DISPLAY_HOME;
-      break;
-
-    case 1:
-      msg.state = DISPLAY_ERROR;
-      break;
-
-    case 2:
-      msg.state = DISPLAY_SETTINGS;
-      break;
-
-    default:
-      currentState[0] = 0;
-      msg.state = DISPLAY_HOME;
-      break;
-  }
-
-  xQueueSend(displayQueue, &msg, 0);
-}
-
-
-
-//----------------------------------------------
-// This is the second level for the Settings tab. When adding a second level for other tabs,
-// define the states here.
-//----------------------------------------------
-void secondLevel() {
-
-  // Settings
-  if(currentState[0] == 2){
-    inSecondLevel = true;
-    settingsTab();
-
-    switch (currentState[1]){
-
-      case 1: // toggle options
-        if(inThirdLevel)
-          thirdLevel();
-        else if(currentState[lastIndex] != 0) {
-          currentState[2] = 1;
-          if(!inThirdLevel)
-            currentState[lastIndex] = 0;
-          thirdLevel();
-        }
-        else
-          drawCursor(0);
-        break;
-
-      case 2: // restart options
-        if(inThirdLevel)
-          thirdLevel();
-        else if(currentState[lastIndex] != 0) {
-          currentState[2] = 1;
-          if(!inThirdLevel)
-            currentState[lastIndex] = 0;
-          thirdLevel();
-        }
-        else
-          drawCursor(1);
-        break;
-
-      case 3: // back
-        drawCursor(2);
-        if(currentState[lastIndex] != 0) {
-          currentState[1] = 0;                          
-          currentState[lastIndex] = 0;                  
-          inSecondLevel = false;                       
-          firstLevel();
-        }
-        break;
-
-      default:
-        currentState[1] = 1;
-        secondLevel();
-        break;
-    }
-  }
-}
-
-
-//----------------------------------------------------------------------
-// The third level of the state machine. Submenus for Toggle and Restart
-//----------------------------------------------------------------------
-void thirdLevel(){
-
-  // Toggle online
-  if(currentState[1] == 1){
-    inThirdLevel = true;
-    settingsTab();
-
-    switch (currentState[2]){
-
-      case 1: // toggle esp1
-        drawCursor(0);
-        if(currentState[lastIndex] != 0) {
-          currentState[lastIndex] = 0;
-          DisplayMessage msg;
-          msg.state = DISPLAY_MESSAGE;
-          strcpy(msg.msg, "Toggling ESP1..");
-          xQueueSend(displayQueue, &msg, 0);
-          toggleEsp1();
-          nonBlockingDelay(2000);
-          thirdLevel();
-        }
-        break;
-
-      case 2: // toggle esp2
-        drawCursor(1);
-        if(currentState[lastIndex] != 0) {
-          currentState[lastIndex] = 0;
-          DisplayMessage msg;
-          msg.state = DISPLAY_MESSAGE;
-          strcpy(msg.msg, "Toggling ESP2..");
-          xQueueSend(displayQueue, &msg, 0);
-          toggleEsp2();
-          nonBlockingDelay(2000);
-          thirdLevel();
-        };
-        break;
-
-      case 3: // back
-        drawCursor(2);
-        if(currentState[lastIndex] != 0) {
-          
-          currentState[2] = 0;
-          currentState[lastIndex] = 0;
-          inThirdLevel = false;
-          secondLevel();
-        }
-        break;
-
-      default:
-        currentState[2] = 1;
-        thirdLevel();
-        break;
+      if (tempMsg.checksum == calcChecksum(tempMsg))
+      {
+        *dest = tempMsg; // Csak valid adatot írunk ki
+        return true;
+      }
     }
   }
 
-  // Restart ESP
-  else if(currentState[1] == 2){
-    inThirdLevel = true;
-    settingsTab();
-
-    switch (currentState[2]){
-
-      case 1: // restart esp1
-        drawCursor(0);
-        if(currentState[lastIndex] != 0){
-          currentState[lastIndex] = 0;
-          sendSerialMessage(0x01);
-          DisplayMessage msg;
-          msg.state = DISPLAY_MESSAGE;
-          strcpy(msg.msg, "Restarting ESP1...");
-          xQueueSend(displayQueue, &msg, 0);
-          nonBlockingDelay(2000);
-          ESP.restart();
-        }
-        break;
-
-      case 2: // restart esp2
-        drawCursor(1);
-        if(currentState[lastIndex] != 0){
-          currentState[lastIndex] = 0;
-          DisplayMessage msg;
-          msg.state = DISPLAY_MESSAGE;
-          strcpy(msg.msg, "Restarting ESP2...");
-          xQueueSend(displayQueue, &msg, 0);
-          sendSerialMessage(0x02); // code for restarting esp2
-          nonBlockingDelay(2000);
-          thirdLevel();
-        }
-        break;
-
-      case 3: // back
-        drawCursor(2);
-        if(currentState[lastIndex] != 0) {
-          currentState[2] = 0;
-          currentState[lastIndex] = 0;
-          inThirdLevel = false;
-          secondLevel();
-        }
-        break;
-
-      default:
-        currentState[2] = 1;
-        thirdLevel();
-        break;
-    }
+  if (index > 0 && millis() - lastByteTime > 50)
+  {
+    index = 0; // Timeout reset
   }
+  return false;
+}
+
+void updateEsp2(Esp2Status msg)
+{
+  esp2.online = msg.flags & FLAG_ONLINE;
+  esp2.mqttOk = msg.flags & FLAG_MQTT;
+  esp2.mpuOk = msg.flags & FLAG_MPU;
+  esp2.tempOk = msg.flags & FLAG_TEMP;
+  esp2.currentOk = msg.flags & FLAG_CURRENT;
+  esp2.rpmOk = msg.flags & FLAG_RPM;
+  esp2.collecting = msg.flags & FLAG_COLLECT;
+
+  esp2.lastUpdate = millis();
+}
+
+void checkEsp2Timeout()
+{
+  if (millis() - esp2.lastUpdate > 15000)
+  {
+    esp2.online = false;
+    esp2.lastUpdate = 0;
+  }
+}
+
+void renderEsp2()
+{
+  oled.setCursor(0, 40);
+
+  if (!esp2.online)
+  {
+    oled.print("ESP2: OFFLINE");
+    return;
+  }
+
+  oled.print("ESP2: ");
+  oled.print(ok(esp2.mqttOk));
+
+  oled.setCursor(0, 50);
+  oled.print("MPU: ");
+  oled.print(ok(esp2.mpuOk));
+
+  oled.setCursor(0, 60);
+  oled.print("TMP: ");
+  oled.print(ok(esp2.tempOk));
+}
+
+// void buildErrorList()
+// {
+//   errorCount = 0;
+
+//   if (!esp2.online)
+//     addError("ESP2 OFFLINE");
+
+//   if (!esp2.mpuOk)
+//     addError("ACCEL FAIL");
+
+//   if (!esp2.tempOk)
+//     addError("TEMP FAIL");
+// }
+
+void publishEsp1Status()
+{
+  StaticJsonDocument<256> doc;
+
+  doc["esp1"] = true;
+  doc["mqtt"] = checkClientCon();
+  doc["temp"] = checkTempSensor();
+  doc["esp2"] = esp2.online;
+  doc["esp2_collect"] = esp2.collecting;
+  doc["esp2_mpu"] = esp2.mpuOk;
+
+  char buffer[256];
+  serializeJson(doc, buffer);
+
+  sendMqttMessage(ESP1_STATUS_TOPIC, buffer);
 }

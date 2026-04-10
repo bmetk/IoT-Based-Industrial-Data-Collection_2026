@@ -2,18 +2,23 @@
 #define MENU_H
 
 #include <Arduino.h>
+#include <Adafruit_SSD1306.h>
+
 
 void homeTab();
 void errorTab();
 void settingsTab();
-void firstLevel();
+void publishEsp1Status();
 void setupDisplay();
 void drawCursor(int idx);
 void resetSendMeasurements();
-void updateState(char* btnId="");
+void updateState(const char* btnId="");
 void printTabHeader(String title="");
 void processSerial(u_char msg);
 void setErrorEnable(int index, int value);
+void updateHomeData();
+void renderEsp2();
+void checkEsp2Timeout();
 
 bool checkSendMeasurements();
 bool isCollectionEnabled();
@@ -38,9 +43,54 @@ typedef enum {
   EVENT_NONE
 } MenuEvent;
 
+struct Esp2State
+{
+  bool online;
+  bool mqttOk;
+  bool mpuOk;
+  bool tempOk;
+  bool currentOk;
+  bool rpmOk;
+  bool collecting;
+
+  unsigned long lastUpdate;
+};
+
+#pragma pack(push, 1)
+struct Esp2Status
+{
+  uint8_t header; // 0xAA
+  uint8_t version;
+
+  uint8_t flags;
+
+  uint32_t uptime;
+
+  uint8_t checksum;
+};
+#pragma pack(pop)
+
 // Menu state machine variables
 void menuInit();
+void menuLoop();
 void handleMenuEvent(MenuEvent event);
 void requestDisplayUpdate();
+MenuState getCurrentMenu();
+int getCursorIndex();
+void updateEsp2(Esp2Status msg);
+bool readStatus(Esp2Status *dest);
+
+#define FLAG_ONLINE 0x01
+#define FLAG_MQTT 0x02
+#define FLAG_MPU 0x04
+#define FLAG_TEMP 0x08
+#define FLAG_CURRENT 0x10
+#define FLAG_RPM 0x20
+#define FLAG_COLLECT 0x40
+
+#define CMD_TOGGLE   0x01
+#define CMD_RESTART  0x02
+
+extern Esp2State esp2;
 
 #endif
