@@ -676,6 +676,10 @@ void publishEsp1Status()
   doc["esp1"] = true;
   doc["mqtt"] = checkClientCon();
   doc["temp"] = checkTempSensor();
+  RpmStatus rpmStatus = checkRpmSensor();
+  CurrentStatus currentStatus = checkCurrentSensor();
+  doc["rpm"] = rpmStatusToString(rpmStatus);
+  doc["current"] = currentStatusToString(currentStatus);
   doc["esp2"] = esp2.online;
   doc["esp2_collect"] = esp2.collecting;
   doc["esp2_mpu"] = esp2.mpuOk;

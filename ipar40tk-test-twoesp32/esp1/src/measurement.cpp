@@ -2,11 +2,11 @@
 #include <cmath>
 #include <Adafruit_MLX90614.h>
 #include <connectivity.h>
+#include <measurement.h>
 
 #define TEMP_TOPIC "factory/lathe01/temperature/mlx90614/tempC"
 #define RPM_TOPIC "factory/lathe01/speed/m0c70t3/rpm"
 #define AMP_TOPIC "factory/lathe01/current/zmct103c/amp"
-
 
 // Optocoupler
 #define OPTO_PIN 36
@@ -31,14 +31,39 @@ float rpm = 0;
 volatile int holes;
 
 void getCurrent();
+unsigned long lastHoleTime = 0;
+const unsigned long RPM_TIMEOUT = 2000;
 // interrupt routine for rpm measurement
 void IRAM_ATTR countHoles()
 {
     holes++;
+    lastHoleTime = millis();
 }
 void IRAM_ATTR onTimer()
 {
     getCurrent();
+}
+
+const char* rpmStatusToString(RpmStatus status)
+{
+    switch (status)
+    {
+        case RPM_OK: return "ok";
+        case RPM_NO_ROTATION: return "no_rotation";
+        case RPM_SENSOR_FAULT: return "sensor_fault";
+        default: return "unknown";
+    }
+}
+
+const char* currentStatusToString(CurrentStatus status)
+{
+    switch (status)
+    {
+        case CURRENT_OK: return "ok";
+        case CURRENT_NO_LOAD: return "no_load";
+        case CURRENT_SENSOR_FAULT: return "sensor_fault";
+        default: return "unknown";
+    }
 }
 
 //---------------------
@@ -84,6 +109,18 @@ void setRPMTime()
     previousTime = millis();
 }
 
+double phase1sum = 0;
+double phase2sum = 0;
+double phase3sum = 0;
+int measurementCount = 0;
+
+double getRMS(double squaredSum)
+{
+    double meanSquared = squaredSum / static_cast<double>(measurementCount);
+    double rms = sqrt(meanSquared);
+
+    return rms;
+}
 //----------------------------------------------------------
 // Function for checking the state of the temperature sensor
 //----------------------------------------------------------
@@ -100,6 +137,41 @@ bool checkTempSensor()
     }
 }
 
+RpmStatus checkRpmSensor()
+{
+    unsigned long now = millis();
+
+    if ((now - lastHoleTime) < RPM_TIMEOUT)
+    {
+        return RPM_OK;
+    }
+
+    if (getRMS(phase1sum) < 0.5) // finomhangold
+    {
+        return RPM_SENSOR_FAULT;
+    }
+
+    return RPM_NO_ROTATION;
+}
+
+CurrentStatus checkCurrentSensor()
+{
+    if (measurementCount < 10)
+        return CURRENT_SENSOR_FAULT;
+
+    double rms1 = getRMS(phase1sum);
+    double rms2 = getRMS(phase2sum);
+    double rms3 = getRMS(phase3sum);
+
+    if (isnan(rms1) || isnan(rms2) || isnan(rms3))
+        return CURRENT_SENSOR_FAULT;
+
+    if (rms1 < 0.05 && rms2 < 0.05 && rms3 < 0.05)
+        return CURRENT_NO_LOAD;
+
+    return CURRENT_OK;
+}
+
 //------------------------------------------------------------------
 // Measurement functions for rpm, current draw and motor temperature
 //------------------------------------------------------------------
@@ -107,14 +179,11 @@ const int sampleSize = 120;
 double phase1Arr[sampleSize];
 double phase2Arr[sampleSize];
 double phase3Arr[sampleSize];
-double phase1sum = 0;
-double phase2sum = 0;
-double phase3sum = 0;
+
 double p1A = 0;
 double p2A = 0;
 double p3A = 0;
 
-int measurementCount = 0;
 // current
 double readVoltage(int pin)
 {
@@ -165,25 +234,6 @@ void getCurrent()
     measurementCount++;
 }
 
-double getRMS(double squaredSum)
-{
-    double meanSquared = squaredSum / static_cast<double>(measurementCount);
-    double rms = sqrt(meanSquared);
-
-    return rms;
-}
-
-/*double getRMS(double arr[]) {
-    double squaredSum = 0.0f;
-    for (int i = 0; i < sampleSize; ++i) {
-        squaredSum += arr[i] * arr[i];
-    }
-
-    double meanSquared = squaredSum / static_cast<double>(sampleSize);
-    double rms = sqrt(meanSquared);
-
-    return rms;
-}*/
 
 void sendCurrent()
 {
@@ -215,13 +265,16 @@ void getRpm()
 }
 
 // Temperature measurement
-void getTempC() {
+void getTempC()
+{
     mlxOk = mlx.begin();
     double tempC = mlx.readObjectTempC();
-    if (!mlxOk || isnan(tempC) || tempC < -40 || tempC > 300) {
+    if (!mlxOk || isnan(tempC) || tempC < -40 || tempC > 300)
+    {
         sendMqttMessage(TEMP_TOPIC, "-100");
     }
-    else {
+    else
+    {
         char buf[16];
         snprintf(buf, sizeof(buf), "%.2f", tempC);
         sendMqttMessage(TEMP_TOPIC, buf);

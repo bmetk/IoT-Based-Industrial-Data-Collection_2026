@@ -9,11 +9,15 @@ lock = threading.Lock()
 
 # Start machine simulation in a separate thread for each machine ID
 @app.post("/start/{machine_id}")
-def start_machine(machine_id: str):
+def start_machine(machine_id: str, rpm_mode: str = "low", wear: float = 0.0):
 
     with lock:
         if machine_id in machines:
-            return {"status": "already running"}
+            thread = machines[machine_id]["thread"]
+            if thread.is_alive():
+                return {"status": "already running"}
+            else:
+                del machines[machine_id]
 
         stop_event = threading.Event()
 
@@ -25,7 +29,7 @@ def start_machine(machine_id: str):
         thread = threading.Thread(
             target=simulate_machine,
             args=(machine_id, stop_event, config),
-            daemon=True
+            daemon=False
         )
 
         thread.start()
@@ -47,6 +51,7 @@ def stop_machine(machine_id: str):
             return {"status": "not running"}
 
         machines[machine_id]["stop_event"].set()
+        machines[machine_id]["thread"].join(timeout=2)
         del machines[machine_id]
 
     return {"status": "stopped", "machine": machine_id}
@@ -67,3 +72,9 @@ def update_config(machine_id: str, rpm_mode: str,  wear: float = 0.0):
         "rpm_mode": rpm_mode,
         "wear": wear
     }
+
+@app.get("/status/{machine_id}")
+def status(machine_id: str):
+    if machine_id in machines:
+        return {"running": True}
+    return {"running": False}
