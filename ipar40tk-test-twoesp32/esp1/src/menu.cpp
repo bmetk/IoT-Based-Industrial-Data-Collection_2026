@@ -77,6 +77,8 @@ void requestDisplayUpdate()
 
   case MENU_SETTINGS:
   case MENU_SETTINGS_TOGGLE:
+    msg.state = DISPLAY_SETTINGS;
+    break;
   case MENU_SETTINGS_RESTART:
     msg.state = DISPLAY_SETTINGS;
     break;
@@ -128,12 +130,25 @@ void handleMenuEvent(MenuEvent event)
   //----------------------------------
   case MENU_SETTINGS:
     if (event == EVENT_NEXT)
-      currentMenu = MENU_HOME;
+      cursorIndex = (cursorIndex + 1) % 3;
 
     else if (event == EVENT_ENTER)
     {
-      currentMenu = MENU_SETTINGS_TOGGLE;
-      cursorIndex = 0;
+      switch (cursorIndex)
+      {
+      case 0:
+        currentMenu = MENU_SETTINGS_TOGGLE;
+        cursorIndex = 0;
+        break;
+      case 1:
+        currentMenu = MENU_SETTINGS_RESTART;
+        cursorIndex = 0;
+        break;
+      case 2:
+        currentMenu = MENU_HOME;
+        cursorIndex = 0;
+        break;
+      }
     }
     break;
 
@@ -156,6 +171,7 @@ void handleMenuEvent(MenuEvent event)
 
       case 2:
         currentMenu = MENU_SETTINGS;
+        cursorIndex = 0;
         break;
       }
     }
@@ -185,6 +201,7 @@ void handleMenuEvent(MenuEvent event)
 
       case 2:
         currentMenu = MENU_SETTINGS;
+        cursorIndex = 0;
         break;
       }
     }
@@ -498,10 +515,15 @@ void settingsTab()
   //----------------------------------
   case MENU_SETTINGS:
     oled.setCursor(20, headerHeight);
-    oled.print("CONTROL");
+    oled.print("Toggle ESP's");
 
     oled.setCursor(20, headerHeight + offsetY);
-    oled.print("ESP'S");
+    oled.print("Restart ESP's");
+
+    oled.setCursor(20, headerHeight + 2 * offsetY);
+    oled.print("Back");
+
+    drawCursor(cursorIndex);
     break;
 
   //----------------------------------
@@ -530,9 +552,6 @@ void settingsTab()
     oled.print("BACK");
 
     drawCursor(cursorIndex);
-    break;
-
-  default:
     break;
   }
 }

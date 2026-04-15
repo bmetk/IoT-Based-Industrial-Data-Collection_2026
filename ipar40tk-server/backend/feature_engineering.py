@@ -190,8 +190,8 @@ def process_vibration(machine, axis, vib):
     fft_vals = fft_vals[::step]
     freqs = freqs[::step]
 
-    # Filter frequencies up to 200 Hz
-    mask = freqs <= 200
+    # Filter frequencies up to 500 Hz
+    mask = freqs <= 500
     freqs = freqs[mask]
     fft_vals = fft_vals[mask]
 
