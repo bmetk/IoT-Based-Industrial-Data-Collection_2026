@@ -107,7 +107,7 @@ def query_fft(machine, axis):
 
     query = f'''
     from(bucket:"openmaps")
-      |> range(start:-2m)
+      |> range(start:-10m)
       |> filter(fn:(r)=> r["_measurement"]=="lathe_fft")
       |> filter(fn:(r)=> r["machine"]=="{machine}")
       |> filter(fn:(r)=> r["axis"]=="{axis}")
@@ -118,6 +118,28 @@ def query_fft(machine, axis):
     df = query_api.query_data_frame(query)
 
     if isinstance(df, list):
+        df = pd.concat(df)
+
+    if df.empty:
+        return None
+
+    return df
+
+def query_status(machine):
+
+    query = f'''
+    from(bucket:"openmaps")
+      |> range(start:-5m)
+      |> filter(fn: (r) => r["_measurement"] == "lathe_status_esp1" or r["_measurement"] == "lathe_status_esp2")
+      |> filter(fn: (r) => r["_field"] == "esp1" or r["_field"] == "esp2" or r["_field"] == "esp2_collect" or r["_field"] == "esp2_mpu" or r["_field"] == "mpu" or r["_field"] == "mqtt" or r["_field"] == "temp" or r["_field"] == "rpm")
+      |> filter(fn: (r) => r["machine"] == "{machine}")
+    '''
+
+    df = query_api.query_data_frame(query)
+
+    if isinstance(df, list):
+        if len(df) == 0:
+            return None
         df = pd.concat(df)
 
     if df.empty:

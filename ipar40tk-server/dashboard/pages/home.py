@@ -13,22 +13,27 @@ layout = dbc.Container([
     dbc.Row([
 
         dbc.Col([
-            dcc.Graph(id="rpm-gauge"),
-            html.Div(id="rpm-health")
-        ]),
+            dcc.Graph(id="rpm-gauge", style={"height": "300px"})
+        ], width=4),
 
         dbc.Col([
-            dcc.Graph(id="temp-gauge"),
-            html.Div(id="temp-health")
-        ]),
+            dcc.Graph(id="temp-gauge", style={"height": "300px"})
+        ], width=4),
 
         dbc.Col([
-            dcc.Graph(id="current-gauge"),
-            html.Div(id="current-health")
-        ]),
+            dcc.Graph(id="current-gauge", style={"height": "300px"})
+        ], width=4),
 
-    ]),
+    ], className="g-2"),
 
+    html.Br(),
+    dbc.Row([
+
+        dbc.Col([
+            html.Div(id="status-table")
+        ], width=12)
+
+    ], className="g-2"),
     html.Br(),
 
     dbc.Row([
@@ -58,13 +63,10 @@ layout = dbc.Container([
 
 @dash.callback(
     Output("rpm-gauge","figure"),
-    Output("rpm-health","children"),
 
     Output("temp-gauge","figure"),
-    Output("temp-health","children"),
 
     Output("current-gauge","figure"),
-    Output("current-health","children"),
 
     Input("machine-selector","value"),
     Input("refresh","n_intervals")
@@ -74,7 +76,7 @@ def update_scalars(machine,_):
     df=query_features(machine)
 
     if df.empty:
-        return no_update, no_update, no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update
 
     def get_latest(df, field):
 
@@ -100,35 +102,29 @@ def update_scalars(machine,_):
     rpm = get_latest(df, "rpm")
     temp = get_latest(df, "tempC")
     
-    rpm_score = query_latest_anomaly(machine, "combined")
-    rpm_mean, rpm_std = query_anomaly_stats(machine, "combined")
-
-    temp_score = query_latest_anomaly(machine, "combined")
-    temp_mean, temp_std = query_anomaly_stats(machine, "combined")
-
-    current_score = query_latest_anomaly(machine, "combined")
-    current_mean, current_std = query_anomaly_stats(machine, "combined")
 
     rpm_fig=go.Figure(go.Indicator(
         mode="gauge+number",
         value = rpm if rpm is not None else 0,
-        title = "RPM (no data)" if rpm is None else "RPM",
-        gauge={"axis":{"range":[0,3000]}}
+        title ={"text": "RPM (no data)" if rpm is None else "RPM", "font": {"size": 16}},
+        gauge={"axis":{"range":[0,3000]},"bar": {"thickness": 0.3}},
+        number={"font": {"size": 30}}
     ))
 
     temp_fig=go.Figure(go.Indicator(
         mode="gauge+number",
         value = temp if temp is not None else 0,
-        title = "Temperature (no data)" if temp is None else "Temperature",
-        gauge={"axis":{"range":[0,120]}}
+        title = {"text": "Temperature (no data)" if temp is None else "Temperature", "font": {"size": 16}},
+        gauge={"axis":{"range":[0,120]},"bar": {"thickness": 0.3}},
+        number={"font": {"size": 30}}
     ))
 
     ia, ib, ic = get_3phase(df)
     if all(v is None for v in [ia, ib, ic]):
         return (
-            rpm_fig, "No data",
-            temp_fig, "No data",
-            go.Figure(), "No data"
+            rpm_fig,
+            temp_fig,
+            go.Figure(),
         )
 
     values = [
@@ -154,13 +150,10 @@ def update_scalars(machine,_):
 
     return (
         rpm_fig,
-        health_indicator(rpm_score),
 
         temp_fig,
-        health_indicator(temp_score),
 
         current_fig,
-        health_indicator(current_score)
     )
 
 @dash.callback(
@@ -203,3 +196,83 @@ def update_vibration(machine, axis, _):
     health = health_indicator(score)
 
     return fig, health
+
+@dash.callback(
+    Output("status-table", "children"),
+    Input("machine-selector","value"),
+    Input("refresh","n_intervals")
+)
+def update_status(machine, _):
+
+    df = query_status(machine)
+
+    if df is None:
+        return "No status data"
+
+    def get(field, measurement):
+        sub = df[(df["_field"] == field) & (df["_measurement"] == measurement)]
+        if sub.empty:
+            return None
+        return sub.sort_values("_time").iloc[-1]["_value"]
+
+    lathe_status_esp1_esp1 = get("esp1", "lathe_status_esp1")
+    mqtt_esp1 = get("mqtt", "lathe_status_esp1")
+    temp = get("temp", "lathe_status_esp1")
+    rpm = get("rpm", "lathe_status_esp1")
+    current = get("current", "lathe_status_esp1")
+    lathe_status_esp1_esp2 = get("esp2", "lathe_status_esp1")
+    esp2_collect = get("esp2_collect", "lathe_status_esp1")
+    esp2_mpu = get("esp2_mpu", "lathe_status_esp1")
+    
+    lathe_status_esp2_esp2 = get("esp2", "lathe_status_esp2")
+    mqtt_esp2 = get("mqtt", "lathe_status_esp2")
+    mpu = get("mpu", "lathe_status_esp2")
+    lathe_status_esp2_esp1 = get("esp1", "lathe_status_esp2")
+
+    def badge(label, value):
+
+        if value is True:
+            color = "success"
+            text = "OK"
+
+        elif value is False:
+            color = "danger"
+            text = "OFF"
+
+        elif value is None:
+            color = "secondary"
+            text = "N/A"
+
+        else:
+            color = "warning"
+            text = str(value)
+
+        return dbc.Badge(
+            f"{label}: {text}",
+            color=color,
+            className="me-2",
+            pill=True
+        )
+
+    return dbc.Card(
+        dbc.CardBody([
+
+            html.Div([
+                badge("ESP1 self status", lathe_status_esp1_esp1),
+                badge("ESP1 MQTT", mqtt_esp1),
+                badge("TEMP", temp),
+                badge("RPM", rpm),
+                badge("CURRENT", current),
+                badge("ESP2 status from ESP1", lathe_status_esp1_esp2),
+                badge("ESP2 collection from ESP1", esp2_collect),
+                badge("ESP2 mpu from ESP1", esp2_mpu),
+                badge("ESP2 self status", lathe_status_esp2_esp2),
+                badge("ESP2 MQTT", mqtt_esp2),
+                badge("MPU", mpu),
+                badge("ESP1 status from ESP2", lathe_status_esp2_esp1)
+            ], style={"display": "flex", "flexWrap": "wrap", "gap": "5px"})
+
+        ], style={"padding": "5px"}),
+
+        style={"marginTop": "5px"}
+    )
