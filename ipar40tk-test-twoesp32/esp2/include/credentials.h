@@ -1,6 +1,6 @@
-#define SSID        "I40TK-office"
-#define PWD         "Ipar4Ir0d4"
+#define SSID        "GEPULETWIFI"
+#define PWD         "GepuletWifi987*"
 #define MQTT_USR    "bmetk"
 #define MQTT_PWD    "iot26"
-#define MQTT_ADDR   "172.22.0.58"
-#define MQTT_PORT   1883
+#define MQTT_ADDR   "152.66.34.82"
+#define MQTT_PORT   32701
