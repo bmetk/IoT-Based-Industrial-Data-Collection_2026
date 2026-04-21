@@ -39,7 +39,7 @@ navbar = dbc.Navbar(
                 id="rpm-mode", 
                 options=[ {"label": "Low RPM", "value": "low"},
                           {"label": "Medium RPM", "value": "medium"},
-                            {"label": "High RPM", "value": "high"},
+                          {"label": "High RPM", "value": "high"},
                         ], 
                 value="low",
                 style={"width": "150px"} 

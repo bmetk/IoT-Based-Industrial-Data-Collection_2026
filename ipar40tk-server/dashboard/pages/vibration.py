@@ -1,8 +1,6 @@
 import dash
-from dash import dcc
 from dash import dcc, html, Input, Output
 import dash_bootstrap_components as dbc
-from components.health_indicator import health_indicator
 from influx_query import *
 import plotly.graph_objects as go
 
@@ -11,8 +9,33 @@ dash.register_page(__name__, path="/vibration")
 layout = dbc.Container([
 
     dbc.Row([
-        dbc.Col(dcc.Graph(id="rms-graph")),
-        dbc.Col(dcc.Graph(id="fft-graph")),
+
+        dbc.Col([
+            dcc.Tabs(
+                id="vibration-rms-tabs",
+                value="vibX_rms",
+                children=[
+                    dcc.Tab(label="X axis", value="vibX_rms"),
+                    dcc.Tab(label="Y axis", value="vibY_rms"),
+                    dcc.Tab(label="Z axis", value="vibZ_rms")
+                ]
+            ),
+            dcc.Graph(id="rms-graph")
+        ])
+    ]),
+    dbc.Row([
+        dbc.Col([
+            dcc.Tabs(
+                id="vibration-fftpeak-tabs",
+                value="vibX_fft_peak",
+                children=[
+                    dcc.Tab(label="X axis", value="vibX_fft_peak"),
+                    dcc.Tab(label="Y axis", value="vibY_fft_peak"),
+                    dcc.Tab(label="Z axis", value="vibZ_fft_peak")
+                ]
+            ),
+            dcc.Graph(id="fft-peak-graph")
+        ])
     ]),
 
     dbc.Row([
@@ -22,42 +45,60 @@ layout = dbc.Container([
 ])
 
 @dash.callback(
-
     Output("rms-graph","figure"),
-    Output("fft-graph","figure"),
+    Output("fft-peak-graph","figure"),
     Output("psd-graph","figure"),
 
     Input("machine-selector","value"),
-    Input("vibration-tabs","value"),
+    Input("vibration-rms-tabs","value"),
+    Input("vibration-fftpeak-tabs","value"),
     Input("refresh","n_intervals")
-
 )
-def update_vibration(machine, axis, _):
+def update_vibration(machine, rms_axis, fftpeak_axis, _):
 
-    df = query_vibration(machine, axis)
-    if df is None or df.empty or "_value" not in df.columns:
-        return go.Figure(), "No data"
+    df_rms = query_vibration(machine, rms_axis)
+    df_fftpeak = query_vibration(machine, fftpeak_axis)
 
-    score = query_latest_anomaly(machine, "vibration")
+    fig_rms = go.Figure()
+    fig_fftpeak = go.Figure()
+    fig_psd = go.Figure()
 
-    fig = go.Figure()
+    # RMS
+    if df_rms is not None and not df_rms.empty:
+        df_rms = df_rms.sort_values("_time")
 
-    fig.add_trace(
-        go.Scatter(
-            x=df["_time"],
-            y=df["_value"],
-            mode="lines"
-        )
-    )
+        fig_rms.add_trace(go.Scatter(
+            x=df_rms["_time"],
+            y=df_rms["_value"],
+            mode="lines",
+            line=dict(color="blue")
+        ))
 
-    fig.update_layout(
-        title=f"Vibration {axis}",
-        template="plotly_dark"
-    )
-
-    if score is not None and score < -0.3:
-        fig.update_layout(
-            paper_bgcolor="rgba(255,0,0,0.15)"
+        fig_rms.update_layout(
+            title=f"Vibration RMS {rms_axis}",
+            template="plotly_white"
         )
 
-    return fig, health_indicator(score)
+        fig_rms.update_xaxes(title="Time")
+        fig_rms.update_yaxes(title="Amplitude")
+
+    # FFT Peak
+    if df_fftpeak is not None and not df_fftpeak.empty:
+        df_fftpeak = df_fftpeak.sort_values("_time")
+
+        fig_fftpeak.add_trace(go.Scatter(
+            x=df_fftpeak["_time"],
+            y=df_fftpeak["_value"],
+            mode="lines",
+            line=dict(color="orange")
+        ))
+
+        fig_fftpeak.update_layout(
+            title=f"FFT Peak {fftpeak_axis}",
+            template="plotly_white"
+        )
+
+        fig_fftpeak.update_xaxes(title="Time")
+        fig_fftpeak.update_yaxes(title="Amplitude")
+
+    return fig_rms, fig_fftpeak, fig_psd

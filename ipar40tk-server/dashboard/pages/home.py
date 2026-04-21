@@ -1,6 +1,5 @@
 import dash
-from dash import dcc, html, Input, Output
-from dash import no_update
+from dash import dcc, html, Input, Output, no_update
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from influx_query import *

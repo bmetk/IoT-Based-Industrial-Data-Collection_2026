@@ -157,17 +157,12 @@ void setup()
   Wire.setClock(400000);
 
   imu.Config(&Wire, bfs::Mpu9250::I2C_ADDR_PRIM);
-
+  client.enableDebuggingMessages();
   client.setKeepAlive(10);
   client.setMaxPacketSize(4096);
   client.setMqttReconnectionAttemptDelay(10000);
   client.setWifiReconnectionAttemptDelay(10000);
 
-  while (!imu.Begin())
-  {
-    Serial.println("IMU init failed");
-    delay(500);
-  }
 
   imu.ConfigSrd(0);
   imu.ConfigAccelRange(bfs::Mpu9250::ACCEL_RANGE_4G);

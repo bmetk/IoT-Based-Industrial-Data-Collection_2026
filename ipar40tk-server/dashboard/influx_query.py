@@ -42,7 +42,17 @@ def query_anomalies(machine):
       |> filter(fn:(r)=> r["machine"]=="{machine}")
     '''
 
-    return query_api.query_data_frame(query)
+    df = query_api.query_data_frame(query)
+
+    if isinstance(df, list):
+        if len(df) == 0:
+            return pd.DataFrame()
+        df = pd.concat(df)
+
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    return df
 
 def query_latest_anomaly(machine, aspect):
 
@@ -79,6 +89,9 @@ def query_vibration(machine, axis):
 
     if isinstance(df, list):
         df = pd.concat(df)
+
+    if df.empty:
+        return None
 
     return df
 
