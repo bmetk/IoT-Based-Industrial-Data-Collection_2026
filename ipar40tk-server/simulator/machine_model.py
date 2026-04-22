@@ -1,5 +1,4 @@
 import json
-
 import numpy as np
 
 # Simulate RPM values based on machine mode

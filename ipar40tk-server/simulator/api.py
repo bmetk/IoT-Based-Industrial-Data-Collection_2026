@@ -22,14 +22,14 @@ def start_machine(machine_id: str, rpm_mode: str = "low", wear: float = 0.0):
         stop_event = threading.Event()
 
         config = {
-            "rpm_mode": "low",
-            "wear": 0.0
+            "rpm_mode": rpm_mode,
+            "wear": wear
         }
 
         thread = threading.Thread(
             target=simulate_machine,
             args=(machine_id, stop_event, config),
-            daemon=False
+            daemon=True
         )
 
         thread.start()
@@ -51,7 +51,14 @@ def stop_machine(machine_id: str):
             return {"status": "not running"}
 
         machines[machine_id]["stop_event"].set()
-        machines[machine_id]["thread"].join(timeout=2)
+        thread = machines[machine_id]["thread"]
+
+    thread.join(timeout=5)
+
+    if thread.is_alive():
+        return {"status": "failed to stop cleanly"}
+
+    with lock:
         del machines[machine_id]
 
     return {"status": "stopped", "machine": machine_id}
