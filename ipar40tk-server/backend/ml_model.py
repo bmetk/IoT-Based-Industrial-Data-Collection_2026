@@ -1,137 +1,168 @@
 from sklearn.ensemble import IsolationForest
 import numpy as np
 from sklearn.preprocessing import StandardScaler
+import pandas as pd
+import os
+from collections import deque
+import numpy as np
 
-# Anomaly detection models
-WINDOW = 200
-RETRAIN_INTERVAL = 200
-WARMUP = 20
-SMOOTHING = 10
 
-def create_model():
-    return IsolationForest(contamination=0.02)
+FEATURE_COLUMNS = [
+    "rms",
+    "fft_peak",
+    "energy",
+    "current_mean",
+    "imbalance",
+    "temperature",
+    "rpm"
+]
 
-def create_entry():
-    return {
-        "model": create_model(),
-        "buffer": [],
-        "last_state": None,
-        "counter": 0,
-        "warmup": 0,
-        "score_history": [],
-        "fitted": False,
-        "scaler": StandardScaler(),
-        "baseline_buffer": []
-    }
+def load_baselines(folder):
+    for state in STATES:
+        path = os.path.join(folder, f"{state}.xlsx")
 
-models = {
-    "low": create_entry(),
-    "mid": create_entry(),
-    "high": create_entry()
-}
+        if not os.path.exists(path):
+            raise RuntimeError(f"Missing baseline file for state: {state}")
 
-# RPM based state
-def get_rpm_state(rpm: float) -> str:
-    if rpm < 800:
-        return "low"
-    elif rpm < 1800:
-        return "mid"
-    else:
-        return "high"
+        df = pd.read_excel(path)
 
-# Predicts anomaly score based on feature vector and RPM state
-def predict(feature_vector, rpm):
-    if rpm is None:
-        return None
+        # csak feature oszlopok
+        X = df[FEATURE_COLUMNS].values
 
-    state = get_rpm_state(rpm)
-    entry = models[state]
+        entry = models[state]
 
-    fv = np.asarray(feature_vector, dtype=float).flatten()
-
-    # Handle state changes and warmup period
-    if entry["last_state"] is not None and entry["last_state"] != state:
-        print(f"[INFO] State change: {entry['last_state']} -> {state}")
-        entry["buffer"] = []
-        entry["warmup"] = 0
-        entry["score_history"] = []
-
-    entry["last_state"] = state
-
-    score = None
-    # If the score improves and is no longer highly anomalous, we can unfreeze the model to allow it to learn from new data points again
-    if entry.get("freeze"):
-        return float(score) if score is not None else None
-    
-    if not entry["fitted"]:
-        entry["baseline_buffer"].append(fv)
-    elif score is not None and score > 0:
-        entry["baseline_buffer"].append(fv)
-
-    # Only score if model is fitted to avoid unreliable scores during warmup period
-    if entry["fitted"]:
-        fv_scaled = entry["scaler"].transform(fv.reshape(1, -1))
-        score = entry["model"].decision_function(fv_scaled)[0]
-
-    # If the score is not highly anomalous, we can add the feature vector to a baseline buffer which the model can learn from to adapt to normal data patterns over time
-    if score is not None and score > 0:
-        entry["baseline_buffer"].append(fv)
-
-    # Unfreeze model
-    if entry.get("freeze") and score is not None and score > -0.05:
-        entry["freeze"] = False
-
-    # If the score is highly anomalous, we can choose to freeze the model to prevent it from learning from anomalous data points which could degrade its performance
-    if score is not None and score < -0.15:
-        entry["freeze"] = True
-
-    # Keep buffer size manageable to limit memory usage and ensure model trains on recent data patterns
-    if len(entry["buffer"]) > WINDOW:
-        entry["buffer"] = entry["buffer"][-WINDOW:]
-    
-    # Warmup period to allow model to learn initial patterns before scoring
-    entry["warmup"] += 1
-    if entry["warmup"] < WARMUP:
-        return None
-
-    # Limit for buffer
-    if len(entry["baseline_buffer"]) > 500:
-        entry["baseline_buffer"] = entry["baseline_buffer"][-500:]
-
-    if len(entry["baseline_buffer"]) < 20:
-        return None
-
-    X = np.vstack(entry["baseline_buffer"])
-
-    # Retrain the model periodically to adapt to new data patterns while avoiding overfitting
-    entry["counter"] += 1
-
-    if False and entry["counter"] % RETRAIN_INTERVAL == 0:
-        if score > -0.1:
-            entry["scaler"].fit(X)
-            X_scaled = entry["scaler"].transform(X)
-
-            entry["model"].fit(X_scaled)
-
-    # Score the current feature vector if the model is fitted
-    if not entry["fitted"]:
         entry["scaler"].fit(X)
         X_scaled = entry["scaler"].transform(X)
 
         entry["model"].fit(X_scaled)
+
+        threshold = compute_threshold(entry["model"], entry["scaler"], X)
+        entry["threshold"] = threshold
+
         entry["fitted"] = True
+        print(f"[INFO] Loaded states: {[s for s in models if models[s]['fitted']]}")
+        print(f"[INFO] Loaded baseline for {state}, samples: {len(X)}")
+
+
+models = {}
+
+STATES = [
+    "low_idle", "low_medium", "low_high",
+    "mid_idle", "mid_medium", "mid_high",
+    "high_idle", "high_medium", "high_high"
+]
+
+
+
+def create_entry():
+    return {
+        "model": IsolationForest(contamination=0.02),
+        "scaler": StandardScaler(),
+        "fitted": False,
+        "score_history": []
+    }
+
+for state in STATES:
+    models[state] = create_entry()
+
+
+def get_operating_state(rpm: float, current_mean: float) -> str:
+    if rpm < 800:
+        speed = "low"
+    elif rpm < 1400:
+        speed = "mid"
+    else:
+        speed = "high"
+
+    # Terhelés KALIBRÁLÁST igényel!!!
+    if current_mean < 2.0:
+        load = "idle"
+    elif current_mean < 5.0:
+        load = "medium"
+    else:
+        load = "high"
+
+    return f"{speed}_{load}"
+
+def compute_threshold(model, scaler, X):
+    X_scaled = scaler.transform(X)
+    scores = model.decision_function(X_scaled)
+
+    # pl. 5% legrosszabb még normál
+    threshold = np.percentile(scores, 5)
+
+    return threshold
+
+# Predicts anomaly score based on feature vector and RPM state
+SMOOTHING = 10
+
+def predict(feature_vector, rpm, current_mean):
+    if rpm is None or current_mean is None:
         return None
 
-    fv_scaled = entry["scaler"].transform(fv.reshape(1, -1))
+    state = get_operating_state(rpm, current_mean)
+    entry = models.get(state)
 
-    score = entry["model"].decision_function(fv_scaled)[0]
+    if entry is None or not entry["fitted"]:
+        return None
 
-    # Smooth the score using a rolling average to reduce noise and false positives
-    entry["score_history"].append(score)
+    fv = np.asarray(feature_vector, dtype=float).reshape(1, -1)
 
+    fv_scaled = entry["scaler"].transform(fv)
+    raw_score = entry["model"].decision_function(fv_scaled)[0]
+
+    # smoothing
+    entry["score_history"].append(raw_score)
     if len(entry["score_history"]) > SMOOTHING:
         entry["score_history"].pop(0)
 
-    smoothed_score = np.mean(entry["score_history"])
+    score = float(np.mean(entry["score_history"]))
 
-    return float(smoothed_score)
+    threshold = entry["threshold"]
+
+    is_anomaly = score < threshold
+    severity = threshold - score if is_anomaly else 0
+
+    #  RUL
+    rul = update_rul(state, score)
+
+    return {
+        "score": score,
+        "state": state,
+        "is_anomaly": is_anomaly,
+        "severity": severity,
+        "rul": rul
+    }
+
+RUL_WINDOW = 100
+
+def create_rul_entry():
+    return {
+        "history": deque(maxlen=RUL_WINDOW)
+    }
+
+rul_models = {state: create_rul_entry() for state in STATES}
+
+def update_rul(state, score):
+    entry = rul_models[state]
+    entry["history"].append(score)
+
+    if len(entry["history"]) < 20:
+        return None
+
+    y = np.array(entry["history"])
+    x = np.arange(len(y))
+
+    # lineáris trend
+    slope, intercept = np.polyfit(x, y, 1)
+
+    # mikor éri el a kritikus szintet?
+    CRITICAL = models[state]["threshold"]
+
+    if slope >= 0:
+        return None  # nem romlik
+
+    # y = slope*x + intercept → x = (crit - intercept)/slope
+    rul = (CRITICAL - intercept) / slope
+
+    return max(0, rul)

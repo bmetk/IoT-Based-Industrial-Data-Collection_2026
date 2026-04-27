@@ -4,5 +4,6 @@ numpy
 scipy
 scikit-learn
 asyncio
+pandas
 #torch
 #/tensorflow

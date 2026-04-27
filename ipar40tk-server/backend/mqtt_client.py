@@ -1,6 +1,7 @@
 import paho.mqtt.client as mqtt
 from feature_engineering import process_message
 from config import *
+from ml_model import load_baselines
 
 
 def on_connect(client, userdata, flags, rc):
@@ -20,6 +21,8 @@ def on_message(client, userdata, msg):
 
 
 def start():
+    print("[INIT] Loading ML baselines...")
+    load_baselines("/app/baselines")
 
     client = mqtt.Client()
 

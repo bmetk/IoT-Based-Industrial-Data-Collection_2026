@@ -215,15 +215,7 @@ def process_vibration(machine, axis, vib):
         
     feature_vector = [rms_val, fft_val, energy, current_mean, imbalance, temperature, rpm]
 
-    result = predict(feature_vector, rpm, current_mean)
+    score = predict(feature_vector, rpm)
 
-    if result is None:
-        return
-
-    write_prediction(machine, "combined", result["score"])
-
-    write_feature(machine, "anomaly_severity", result["severity"])
-    write_feature(machine, "is_anomaly", int(result["is_anomaly"]))
-
-    if result["rul"] is not None:
-        write_feature(machine, "rul", result["rul"])
+    if score is not None:
+        write_prediction(machine, "combined", score)

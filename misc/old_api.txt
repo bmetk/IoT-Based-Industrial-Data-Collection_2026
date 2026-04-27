@@ -9,7 +9,7 @@ lock = threading.Lock()
 
 # Start machine simulation in a separate thread for each machine ID
 @app.post("/start/{machine_id}")
-def start_machine(machine_id: str, rpm_mode: str = "low", wear: float = 0.0, load: str = "idle", fault: str = None, wear_rate: float = 0.0005):
+def start_machine(machine_id: str, rpm_mode: str = "low", wear: float = 0.0):
 
     with lock:
         if machine_id in machines:
@@ -23,10 +23,7 @@ def start_machine(machine_id: str, rpm_mode: str = "low", wear: float = 0.0, loa
 
         config = {
             "rpm_mode": rpm_mode,
-            "load": load,
-            "wear": wear,
-            "fault": fault,
-            "wear_rate": wear_rate
+            "wear": wear
         }
 
         thread = threading.Thread(
@@ -68,7 +65,7 @@ def stop_machine(machine_id: str):
 
 # Update simulation configuration for a given machine ID
 @app.post("/config/{machine_id}")
-def update_config(machine_id: str, rpm_mode: str, load: str, wear: float = 0.0, fault: str = None, wear_rate: float = 0.0005):
+def update_config(machine_id: str, rpm_mode: str,  wear: float = 0.0):
 
     with lock:
         if machine_id not in machines:
@@ -76,16 +73,11 @@ def update_config(machine_id: str, rpm_mode: str, load: str, wear: float = 0.0, 
 
         machines[machine_id]["config"]["rpm_mode"] = rpm_mode
         machines[machine_id]["config"]["wear"] = wear
-        machines[machine_id]["config"]["load"] = load
-        machines[machine_id]["config"]["fault"] = fault
-        machines[machine_id]["config"]["wear_rate"] = wear_rate
+
     return {
         "status": "updated",
         "rpm_mode": rpm_mode,
-        "wear": wear,
-        "load": load,
-        "fault": fault,
-        "wear_rate": wear_rate
+        "wear": wear
     }
 
 @app.get("/status/{machine_id}")
@@ -93,11 +85,3 @@ def status(machine_id: str):
     if machine_id in machines:
         return {"running": True}
     return {"running": False}
-
-@app.post("/reset/{machine_id}")
-def reset(machine_id: str):
-    with lock:
-        if machine_id in machines:
-            machines[machine_id]["config"]["wear"] = 0.0
-            machines[machine_id]["config"]["fault"] = None
-    return {"status": "reset"}

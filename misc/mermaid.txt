@@ -1,0 +1,65 @@
+flowchart LR
+
+%% ===== Külső világ =====
+subgraph EXT["Internet"]
+    browser["fa:fa-globe Böngésző"]
+end
+
+%% ===== Edge eszköz =====
+subgraph EDGE["Compact-MAPS (G épület eszterga)"]
+
+    esp["fa:fa-microchip ESP1 & ESP2"]
+
+    aram["fa:fa-bolt Áram"]
+    rpm["fa:fa-sync Fordulatszám"]
+    hom["fa:fa-thermometer-half Hőmérséklet"]
+    rezges["fa:fa-wave-square Rezgés"]
+
+    aram --> esp
+    rpm --> esp
+    hom --> esp
+    rezges --> esp
+end
+
+%% ===== Docker =====
+subgraph DOCKER["Ipar 4.0 Technológiai Központ szervere"]
+
+    mosquitto["fa:fa-wifi Mosquitto :1883"]
+    telegraf["fa:fa-arrow-down Telegraf"]
+    influx["fa:fa-database InfluxDB :8086"]
+    backend["fa:fa-server Backend :8765"]
+    dashboard["fa:fa-chart-bar Dashboard :8050"]
+    simulator["fa:fa-flask Simulator :9000"]
+
+end
+
+%% ===== Kapcsolatok =====
+esp -->|"MQTT: 32701"| mosquitto
+simulator -->|"MQTT"| mosquitto
+
+mosquitto --> telegraf
+mosquitto --> backend
+
+telegraf -->|"write"| influx
+backend -->|"write/read"| influx
+dashboard -->|"read"| influx
+
+browser -->|"HTTP: 61113"| dashboard
+browser -->|"HTTP: 61112"| influx
+browser -->|"API"| simulator
+
+%% ===== Színek =====
+classDef mqtt fill:#E3F2FD,stroke:#1E88E5,stroke-width:2px;
+classDef ingest fill:#E8F5E9,stroke:#43A047,stroke-width:2px;
+classDef db fill:#FFF3E0,stroke:#FB8C00,stroke-width:2px;
+classDef backend fill:#F3E5F5,stroke:#8E24AA,stroke-width:2px;
+classDef ui fill:#E0F7FA,stroke:#00ACC1,stroke-width:2px;
+classDef edge fill:#FCE4EC,stroke:#D81B60,stroke-width:2px;
+
+class mosquitto mqtt;
+class telegraf ingest;
+class influx db;
+class backend backend;
+class dashboard ui;
+class simulator ingest;
+class esp,aram,rpm,hom,rezges edge;
