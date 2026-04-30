@@ -8,13 +8,9 @@ import numpy as np
 
 
 FEATURE_COLUMNS = [
-    "rms",
-    "fft_peak",
-    "energy",
-    "current_mean",
-    "imbalance",
-    "temperature",
-    "rpm"
+    "vibX_rms", "vibY_rms", "vibZ_rms",
+    "vibX_fft_peak", "vibY_fft_peak", "vibZ_fft_peak",
+    "current_mean", "imbalance", "temperature", "rpm"
 ]
 
 def load_baselines(folder):
