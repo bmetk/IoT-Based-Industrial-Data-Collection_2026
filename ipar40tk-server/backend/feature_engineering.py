@@ -182,6 +182,9 @@ def process_vibration(machine, axis, vib):
     write_feature(machine, f"{axis}_rms", rms_val)
     write_feature(machine, f"{axis}_fft_peak", fft_val)
 
+    update_state(machine, f"{axis}_rms", rms_val)
+    update_state(machine, f"{axis}_fft_peak", fft_val)
+
     fft_vals = calculate_fft(vib)
     freqs = np.linspace(0, SAMPLING_FREQ / 2, len(fft_vals))
 
@@ -204,19 +207,33 @@ def process_vibration(machine, axis, vib):
     amps_top = fft_vals[idx]
 
     write_fft(machine, axis, freqs_top, amps_top)
-
-    rpm = get_state(machine, "rpm")
-    temperature = get_state(machine, "temperature")
+    
+    current_imbalance = get_state(machine, "current_imbalance")
     current_mean = get_state(machine, "current_mean")
-    imbalance = get_state(machine, "current_imbalance")
-
-    if None in [rpm, temperature, current_mean, imbalance]:
+    rpm = get_state(machine, "rpm")
+    tempC = get_state(machine, "temperature")
+    vibX_fft_peak = get_state(machine, "vibX_fft_peak")
+    vibX_rms = get_state(machine, "vibX_rms")
+    vibY_fft_peak = get_state(machine, "vibY_fft_peak")
+    vibY_rms = get_state(machine, "vibY_rms")
+    vibZ_fft_peak = get_state(machine, "vibZ_fft_peak")
+    vibZ_rms = get_state(machine, "vibZ_rms")
+    print("CURRENT IMBALANCE:", current_imbalance)
+    print("CURRENT MEAN:", current_mean)
+    print("RPM:", rpm)
+    print("TEMPERATURE:", tempC)
+    print("VIBX FFT PEAK:", vibX_fft_peak)
+    print("VIBX RMS:", vibX_rms)
+    if None in [current_imbalance, current_mean, rpm, tempC, vibX_fft_peak, vibX_rms, vibY_fft_peak, vibY_rms, vibZ_fft_peak, vibZ_rms]:
         return
         
-    feature_vector = [rms_val, fft_val, energy, current_mean, imbalance, temperature, rpm]
+    feature_vector = [current_imbalance, current_mean, rpm, tempC, vibX_fft_peak, vibX_rms, vibY_fft_peak, vibY_rms, vibZ_fft_peak, vibZ_rms]
 
-    result = predict(feature_vector, rpm, current_mean)
+    print("FEATURE VECTOR:", feature_vector)
+    print("RPM:", rpm, "CURRENT:", current_mean)
 
+    result = predict(feature_vector)
+    print("RESULT:", result)
     if result is None:
         return
 

@@ -1,4 +1,4 @@
-from sklearn.ensemble import IsolationForest
+from sklearn.ensemble import IsolationForest, RandomForestClassifier
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
@@ -6,15 +6,22 @@ import os
 from collections import deque
 import numpy as np
 
+state_clf = None
+def set_state_clf(clf):
+    global state_clf
+    state_clf = clf
 
 FEATURE_COLUMNS = [
-    "rms",
-    "fft_peak",
-    "energy",
+    "current_imbalance",
     "current_mean",
-    "imbalance",
-    "temperature",
-    "rpm"
+    "rpm",
+    "tempC",
+    "vibX_fft_peak",
+    "vibX_rms",
+    "vibY_fft_peak",
+    "vibY_rms",
+    "vibZ_fft_peak",
+    "vibZ_rms"
 ]
 
 def load_baselines(folder):
@@ -47,9 +54,9 @@ def load_baselines(folder):
 models = {}
 
 STATES = [
-    "low_idle", "low_medium", "low_high",
-    "mid_idle", "mid_medium", "mid_high",
-    "high_idle", "high_medium", "high_high"
+    "low-rpm_idle_filled", "low-rpm_low-stress_filled", "low-rpm_high-stress_filled",
+    "mid-rpm_idle_filled", "mid-rpm_low-stress_filled", "mid-rpm_high-stress_filled",
+    "high-rpm_idle_filled", "high-rpm_low-stress_filled", "high-rpm_high-stress_filled"
 ]
 
 
@@ -67,22 +74,21 @@ for state in STATES:
 
 
 def get_operating_state(rpm: float, current_mean: float) -> str:
-    if rpm < 800:
+    if rpm < 550:
         speed = "low"
-    elif rpm < 1400:
+    elif rpm < 800:
         speed = "mid"
     else:
         speed = "high"
 
-    # Terhelés KALIBRÁLÁST igényel!!!
-    if current_mean < 2.0:
+    if current_mean < 3.5:
         load = "idle"
     elif current_mean < 5.0:
-        load = "medium"
+        load = "low-stress"
     else:
-        load = "high"
+        load = "high-stress"
 
-    return f"{speed}_{load}"
+    return f"{speed}-rpm_{load}_filled"
 
 def compute_threshold(model, scaler, X):
     X_scaled = scaler.transform(X)
@@ -93,23 +99,54 @@ def compute_threshold(model, scaler, X):
 
     return threshold
 
+def load_training_data(folder):
+    dfs = []
+
+    for state in STATES:
+        path = os.path.join(folder, f"{state}.xlsx")
+        df = pd.read_excel(path)
+
+        df["state"] = state
+        dfs.append(df)
+
+    full_df = pd.concat(dfs, ignore_index=True)
+    return full_df
+
+def train_state_classifier(df):
+    X = df[FEATURE_COLUMNS].values
+    y = df["state"].values
+
+    clf = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=10,
+        random_state=42
+    )
+
+    clf.fit(X, y)
+    return clf
+
 # Predicts anomaly score based on feature vector and RPM state
 SMOOTHING = 10
 
-def predict(feature_vector, rpm, current_mean):
-    if rpm is None or current_mean is None:
+def predict(feature_vector):
+    global state_clf
+
+    if state_clf is None:
+        print("[ERROR] state_clf not initialized")
         return None
+    
+    fv = np.asarray(feature_vector, dtype=float).reshape(1, -1)
+    state = state_clf.predict(fv)[0]
 
-    state = get_operating_state(rpm, current_mean)
     entry = models.get(state)
-
+    print("MODEL EXISTS:", entry is not None)
     if entry is None or not entry["fitted"]:
         return None
 
-    fv = np.asarray(feature_vector, dtype=float).reshape(1, -1)
-
     fv_scaled = entry["scaler"].transform(fv)
     raw_score = entry["model"].decision_function(fv_scaled)[0]
+
+    print(f"[PREDICT] Raw score for {state}: {raw_score}")
 
     # smoothing
     entry["score_history"].append(raw_score)
@@ -151,18 +188,13 @@ def update_rul(state, score):
         return None
 
     y = np.array(entry["history"])
-    x = np.arange(len(y))
 
-    # lineáris trend
-    slope, intercept = np.polyfit(x, y, 1)
+    # exponenciális smoothing trend
+    trend = np.mean(np.diff(y[-10:]))
 
-    # mikor éri el a kritikus szintet?
+    if trend >= 0:
+        return None
+
     CRITICAL = models[state]["threshold"]
 
-    if slope >= 0:
-        return None  # nem romlik
-
-    # y = slope*x + intercept → x = (crit - intercept)/slope
-    rul = (CRITICAL - intercept) / slope
-
-    return max(0, rul)
+    return max(0, (CRITICAL - y[-1]) / trend)

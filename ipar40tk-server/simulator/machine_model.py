@@ -1,14 +1,13 @@
-import json
 import numpy as np
 
 # Simulate RPM values based on machine mode
 def get_rpm_value(mode):
     if mode == "low":
-        return np.random.normal(500, 10)
+        return np.random.normal(450, 10)
     elif mode == "medium":
-        return np.random.normal(1200, 20)
+        return np.random.normal(630, 20)
     else:
-        return np.random.normal(2000, 30)
+        return np.random.normal(1250, 30)
 
 # Simulate temperature values based on RPM and wear state
 def temperature(rpm, wear, load):

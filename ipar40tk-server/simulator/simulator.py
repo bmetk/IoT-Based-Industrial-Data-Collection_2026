@@ -11,6 +11,7 @@ def simulate_machine(machine_id, stop_event, config):
                 wear = config["wear"]
                 load = config["load"]
                 fault = config["fault"]
+                fault_intensity = config["fault_intensity"]
                 wear_rate = config["wear_rate"]
 
                 rpm = model.get_rpm_value(rpm_mode)

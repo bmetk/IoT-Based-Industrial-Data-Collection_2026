@@ -1,7 +1,7 @@
 import paho.mqtt.client as mqtt
 from feature_engineering import process_message
 from config import *
-from ml_model import load_baselines
+from ml_model import load_baselines, load_training_data, train_state_classifier, set_state_clf
 
 
 def on_connect(client, userdata, flags, rc):
@@ -23,7 +23,10 @@ def on_message(client, userdata, msg):
 def start():
     print("[INIT] Loading ML baselines...")
     load_baselines("/app/baselines")
-
+    print("[INIT] Training state classifier...")
+    df = load_training_data("/app/baselines")
+    state_clf = train_state_classifier(df)
+    set_state_clf(state_clf)
     client = mqtt.Client()
 
     client.username_pw_set(MQTT_USER, MQTT_PASS)

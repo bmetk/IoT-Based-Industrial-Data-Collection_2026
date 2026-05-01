@@ -9,7 +9,7 @@ lock = threading.Lock()
 
 # Start machine simulation in a separate thread for each machine ID
 @app.post("/start/{machine_id}")
-def start_machine(machine_id: str, rpm_mode: str = "low", wear: float = 0.0, load: str = "idle", fault: str = None, wear_rate: float = 0.0005):
+def start_machine(machine_id: str, rpm_mode: str = "low", wear: float = 0.0, load: str = "idle", fault: str = None, fault_intensity: float = 0.0, wear_rate: float = 0.002):
 
     with lock:
         if machine_id in machines:
@@ -26,6 +26,7 @@ def start_machine(machine_id: str, rpm_mode: str = "low", wear: float = 0.0, loa
             "load": load,
             "wear": wear,
             "fault": fault,
+            "fault_intensity": fault_intensity,
             "wear_rate": wear_rate
         }
 
@@ -68,7 +69,7 @@ def stop_machine(machine_id: str):
 
 # Update simulation configuration for a given machine ID
 @app.post("/config/{machine_id}")
-def update_config(machine_id: str, rpm_mode: str, load: str, wear: float = 0.0, fault: str = None, wear_rate: float = 0.0005):
+def update_config(machine_id: str, rpm_mode: str, load: str, wear: float = 0.0, fault: str = None, fault_intensity: float = 0.0, wear_rate: float = 0.0005):
 
     with lock:
         if machine_id not in machines:
@@ -78,6 +79,7 @@ def update_config(machine_id: str, rpm_mode: str, load: str, wear: float = 0.0, 
         machines[machine_id]["config"]["wear"] = wear
         machines[machine_id]["config"]["load"] = load
         machines[machine_id]["config"]["fault"] = fault
+        machines[machine_id]["config"]["fault_intensity"] = fault_intensity
         machines[machine_id]["config"]["wear_rate"] = wear_rate
     return {
         "status": "updated",
