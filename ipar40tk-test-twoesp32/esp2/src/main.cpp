@@ -6,6 +6,7 @@
 #include <ArduinoJson.hpp>
 #include <ArduinoJson.h>
 
+// MQTT topics for vibration data
 #define VIBX_TOPIC "factory/lathe01/vibration/mpu9250/vibX"
 #define VIBY_TOPIC "factory/lathe01/vibration/mpu9250/vibY"
 #define VIBZ_TOPIC "factory/lathe01/vibration/mpu9250/vibZ"
@@ -15,16 +16,19 @@
 unsigned long lastEsp1Response = 0;
 bool esp1Online = false;
 
+// MPU9250 I2C address and registers
 #define CHUNK_SIZE 128
 #define DRDY_PIN 27
 #define MPU_ADDR 0x68
 #define WHOAMI_REG 0x75
 
+// Create MPU9250 instance, Serial for inter-ESP communication, and mutexes
 bfs::Mpu9250 imu;
 HardwareSerial SerialInterconn(2);
 SemaphoreHandle_t mqttMutex;
 SemaphoreHandle_t i2cMutex;
 
+// Serial message structure for communication between ESPs
 #pragma pack(push, 1)
 struct Esp2Status
 {
@@ -39,6 +43,7 @@ struct Esp2Status
 };
 #pragma pack(pop)
 
+// Error flag bits
 #define FLAG_ONLINE 0x01
 #define FLAG_MQTT 0x02
 #define FLAG_MPU 0x04
@@ -47,9 +52,11 @@ struct Esp2Status
 #define FLAG_RPM 0x20
 #define FLAG_COLLECT 0x40
 
+// Command codes for serial communication
 #define CMD_TOGGLE 0x01
 #define CMD_RESTART 0x02
 
+// Create MQTT client instance
 EspMQTTClient client(
     SSID,
     PWD,
@@ -76,7 +83,7 @@ bool mpuOk = true, prevMpuOk;
 bool clientOk = true, prevClientOk;
 bool enableDiagnostics = false;
 bool stateChange = false;
-
+// Function declarations
 void collectData();
 void sendJsonMessage();
 void sendChunkedData();
@@ -85,11 +92,12 @@ void checkSystemHealth();
 void checkSerialMessage();
 uint8_t calcChecksum(Esp2Status &msg);
 void sendStatus();
-void mqttTask(void *pv);
-void sensorTask(void *pv);
-void serialTask(void *pv);
-void statusTask(void *pv);
+void SendMqttMessage(void *pv);
+void CollectVibration(void *pv);
+void SerialMessageHandler(void *pv);
+void SendSensorStatus(void *pv);
 
+// Calculate checksum for the status message
 uint8_t calcChecksum(Esp2Status &msg)
 {
   uint8_t *ptr = (uint8_t *)&msg;
@@ -100,7 +108,7 @@ uint8_t calcChecksum(Esp2Status &msg)
 
   return sum;
 }
-
+// Send status message to ESP1
 void sendStatus()
 {
   Esp2Status msg;
@@ -132,6 +140,7 @@ void sendStatus()
   SerialInterconn.flush();
 }
 
+// Clear any existing data in the serial buffer to avoid processing stale messages
 void clearSerialInterconn()
 {
   int x;
@@ -142,12 +151,14 @@ void clearSerialInterconn()
   }
 }
 
+// Interrupt Service Routine for MPU9250 Data Ready signal
 void IRAM_ATTR onDataReady()
 {
   READ = true;
   intCounter++;
 }
 
+// Setup function to initialize peripherals
 void setup()
 {
   setCpuFrequencyMhz(240);
@@ -156,7 +167,11 @@ void setup()
   Wire.begin();
   Wire.setClock(400000);
 
+  // Configure MPU9250 with I2C address and settings
   imu.Config(&Wire, bfs::Mpu9250::I2C_ADDR_PRIM);
+  imu.ConfigSrd(0);
+  imu.ConfigAccelRange(bfs::Mpu9250::ACCEL_RANGE_4G);
+
   client.enableDebuggingMessages();
   client.setKeepAlive(10);
   client.setMaxPacketSize(4096);
@@ -164,57 +179,59 @@ void setup()
   client.setWifiReconnectionAttemptDelay(10000);
 
 
-  imu.ConfigSrd(0);
-  imu.ConfigAccelRange(bfs::Mpu9250::ACCEL_RANGE_4G);
-
-  // interrupt
+  // Interrupt
   pinMode(DRDY_PIN, INPUT_PULLUP);
   attachInterrupt(DRDY_PIN, onDataReady, RISING);
 
-  // starting serial connection between ESPs
+  // Starting serial connection between ESPs
   SerialInterconn.begin(115200, SERIAL_8N1, 16, 17);
   clearSerialInterconn();
   imu.EnableDrdyInt();
   Serial.println("IMU ready");
 
+  // Create mutexes for MQTT and I2C access
   mqttMutex = xSemaphoreCreateMutex();
   i2cMutex = xSemaphoreCreateMutex();
 
+  // Create a task that will be executed in the SendMqttMessage() function, with priority 2 and executed on core 1
   xTaskCreatePinnedToCore(
-      mqttTask,
-      "mqttTask",
-      8192,
-      NULL,
-      2,
-      NULL,
-      1);
+      SendMqttMessage, /* task function. */
+      "SendMqttMessage", /* name of task. */
+      8192, /* stack size of task */
+      NULL, /* parameter of the task */
+      2, /* priority of the task */
+      NULL, /* task handle to keep track of created task */
+      1); /* pin task to core 1 */
 
+  // Create a task that will be executed in the CollectVibration() function, with priority 3 and executed on core 1
   xTaskCreatePinnedToCore(
-      sensorTask,
-      "sensorTask",
-      4096,
-      NULL,
-      3,
-      NULL,
-      1);
+      CollectVibration, /* task function. */
+      "CollectVibration", /* name of task. */
+      4096, /* stack size of task */
+      NULL, /* parameter of the task */
+      3, /* priority of the task */
+      NULL, /* task handle to keep track of created task */
+      1); /* pin task to core 1 */
 
+  // Create a task that will be executed in the SerialMessageHandler() function, with priority 1 and executed on core 0
   xTaskCreatePinnedToCore(
-      serialTask,
-      "serialTask",
-      4096,
-      NULL,
-      1,
-      NULL,
-      0);
+      SerialMessageHandler, /* task function. */
+      "SerialMessageHandler", /* name of task. */
+      4096, /* stack size of task */
+      NULL, /* parameter of the task */
+      1, /* priority of the task */
+      NULL, /* task handle to keep track of created task */
+      0); /* pin task to core 0 */
 
+  // Create a task that will be executed in the SendSensorStatus() function, with priority 1 and executed on core 0
   xTaskCreatePinnedToCore(
-      statusTask,
-      "statusTask",
-      4096,
-      NULL,
-      1,
-      NULL,
-      0);
+      SendSensorStatus, /* task function. */
+      "SendSensorStatus", /* name of task. */
+      4096, /* stack size of task */
+      NULL, /* parameter of the task */
+      1, /* priority of the task */
+      NULL, /* task handle to keep track of created task */
+      0); /* pin task to core 0 */
 }
 
 void loop()
@@ -227,6 +244,7 @@ void onConnectionEstablished()
   Serial.println("Connected to broker.");
 }
 
+// Function to collect data from MPU9250 when Data Ready signal is triggered
 void collectData()
 {
   if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(10)))
@@ -240,9 +258,11 @@ void collectData()
       idx++;
       READ = false;
     }
+    // Semaphore 
     xSemaphoreGive(i2cMutex);
   }
 
+  // If we've collected enough samples, disable the Data Ready interrupt and set the flag to send data
   if (idx >= sampleSize)
   {
     imu.DisableDrdyInt();
@@ -250,26 +270,7 @@ void collectData()
   }
 }
 
-String arrayToString(float arr[])
-{
-  String encodedArray = "[";
-  String sep = ", ";
-  for (uint16_t i = 0; i < sampleSize; i++)
-  {
-    encodedArray += String(arr[i]);
-    if (i < sampleSize - 1)
-    {
-      encodedArray += sep;
-    }
-    else
-    {
-      encodedArray += "]";
-    }
-  }
-
-  return encodedArray;
-}
-
+// Function to send collected data as JSON messages to MQTT broker in chunks
 void sendJsonMessage()
 {
   if (!DATA_READY)
@@ -288,6 +289,7 @@ void sendJsonMessage()
   imu.EnableDrdyInt();
 }
 
+// Function to send collected data in chunks to avoid MQTT message size limits
 void sendChunkedData()
 {
   const int chunkSize = 128;
@@ -304,15 +306,16 @@ void sendChunkedData()
   }
 }
 
+// Function to check the health of the system by verifying MQTT connection and MPU9250 status
 void checkSystemHealth()
 {
   prevClientOk = clientOk;
   prevMpuOk = mpuOk;
 
-  // checking client state
+  // Checking client state
   clientOk = client.isConnected();
 
-  // checking MPU state via WHOAMI register
+  // Checking MPU state via WHOAMI register
   Wire.beginTransmission(MPU_ADDR);
   Wire.write(WHOAMI_REG);
   Wire.endTransmission(false);
@@ -329,7 +332,7 @@ void checkSystemHealth()
     idx = 0;
   }
 
-  // if there was a change, update the state of the system
+  // If there was a change, update the state of the system
   if (clientOk != prevClientOk || mpuOk != prevMpuOk)
     stateChange = true;
 
@@ -363,6 +366,7 @@ void handleCommand(uint8_t cmd)
   }
 }
 
+// Function to check for incoming serial messages from ESP1 and execute commands
 void checkSerialMessage()
 {
   static uint8_t state = 0;
@@ -399,6 +403,7 @@ void checkSerialMessage()
   }
 }
 
+// Function to publish a chunk of data to a specific MQTT topic as a JSON message
 void publishChunk(const char *topic, int16_t *data, int startIdx, int len)
 {
   StaticJsonDocument<3072> doc;
@@ -428,6 +433,7 @@ void publishChunk(const char *topic, int16_t *data, int startIdx, int len)
   vTaskDelay(pdMS_TO_TICKS(10));
 }
 
+// Function to publish the system status to a specific MQTT topic as a JSON message
 void publishSystemStatus()
 {
   StaticJsonDocument<256> doc;
@@ -447,7 +453,8 @@ void publishSystemStatus()
   }
 }
 
-void mqttTask(void *pv)
+// Task function to continuously check MQTT connection and send collected data when ready
+void SendMqttMessage(void *pv)
 {
   for (;;)
   {
@@ -462,7 +469,8 @@ void mqttTask(void *pv)
   }
 }
 
-void sensorTask(void *pv)
+// Task function to continuously check for new vibration data and collect it when ready
+void CollectVibration(void *pv)
 {
   for (;;)
   {
@@ -475,7 +483,8 @@ void sensorTask(void *pv)
   }
 }
 
-void serialTask(void *pv)
+// Task function to continuously check for incoming serial messages from ESP1 and execute commands
+void SerialMessageHandler(void *pv)
 {
   for (;;)
   {
@@ -485,7 +494,8 @@ void serialTask(void *pv)
   }
 }
 
-void statusTask(void *pv)
+// Task function to continuously check the health of the system and publish status updates to MQTT broker
+void SendSensorStatus(void *pv)
 {
   for (;;)
   {

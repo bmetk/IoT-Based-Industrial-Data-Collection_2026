@@ -18,14 +18,12 @@ EspMQTTClient client {
   MQTT_PORT
 };
 
-
-
+// Callback function for when the connection to the MQTT broker is established
 void onConnectionEstablished(){
   Serial.println("ESP ONLINE");
 }
 
-
-
+// Function for clearing the serial buffer to avoid processing old messages
 void clearSerialInterconn() {
   int x;
   while ((x = SerialInterconn.available()) > 0)
@@ -39,14 +37,14 @@ void clearSerialInterconn() {
 // Initializing communication channels
 //------------------------------------
 void initCom(){
-  // configuring the client
+  // Configuring the client
   client.enableDebuggingMessages();
   client.setKeepAlive(10);
   client.setMaxPacketSize(20000);
   client.setMqttReconnectionAttemptDelay(10000);
   client.setWifiReconnectionAttemptDelay(10000);
 
-  // Serial communication between esps
+  // Serial communication between Esps
   SerialInterconn.begin(115200, SERIAL_8N1, 16, 17);
   clearSerialInterconn();
 }
@@ -63,14 +61,12 @@ void clientLoop() {
   client.loop();
 }
 
-
-
+// Function for sending MQTT messages to the broker
 void sendMqttMessage(char* topic, const char* msg){
   client.publish(topic, msg);
 }
 
-
-
+// Sending commands to ESP2
 void sendCommand(uint8_t cmd)
 {
   uint8_t frame[3];
@@ -82,8 +78,7 @@ void sendCommand(uint8_t cmd)
   SerialInterconn.write(frame, 3);
 }
 
-
-
+// Function for checking the serial messages received from ESP2
 u_char checkSerialMessage() {
   if(SerialInterconn.available() > 0) {
     u_char msg = SerialInterconn.read();

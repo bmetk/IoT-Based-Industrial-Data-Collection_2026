@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <Adafruit_SSD1306.h>
 
-
+// Function prototypes
 void homeTab();
 void errorTab();
 void settingsTab();
@@ -17,7 +17,6 @@ void printTabHeader(String title="");
 void processSerial(u_char msg);
 void setErrorEnable(int index, int value);
 void updateHomeData();
-void renderEsp2();
 void checkEsp2Timeout();
 
 bool checkSendMeasurements();
@@ -43,6 +42,7 @@ typedef enum {
   EVENT_NONE
 } MenuEvent;
 
+// State variables for the menu
 struct Esp2State
 {
   bool online;
@@ -56,6 +56,7 @@ struct Esp2State
   unsigned long lastUpdate;
 };
 
+// Serial message structure for communication between ESPs
 #pragma pack(push, 1)
 struct Esp2Status
 {
@@ -80,6 +81,7 @@ int getCursorIndex();
 void updateEsp2(Esp2Status msg);
 bool readStatus(Esp2Status *dest);
 
+// Error handling variables
 #define FLAG_ONLINE 0x01
 #define FLAG_MQTT 0x02
 #define FLAG_MPU 0x04
@@ -90,7 +92,7 @@ bool readStatus(Esp2Status *dest);
 
 #define CMD_TOGGLE   0x01
 #define CMD_RESTART  0x02
-
+// External variables
 extern Esp2State esp2;
 
 #endif

@@ -4,46 +4,52 @@
 #include <connectivity.h>
 #include <measurement.h>
 
+// Topics for MQTT messages
 #define TEMP_TOPIC "factory/lathe01/temperature/mlx90614/tempC"
 #define RPM_TOPIC "factory/lathe01/speed/m0c70t3/rpm"
 #define AMP_TOPIC "factory/lathe01/current/zmct103c/amp"
 
 // Optocoupler
 #define OPTO_PIN 36
-#define HOLE_COUNT 6 // number of holes on the disk
+#define HOLE_COUNT 6 // Number of holes on the disk!
+
 // Current meter
 #define PHASE1_PIN 32
 #define PHASE2_PIN 33
 #define PHASE3_PIN 35
 #define OFFSET_PIN 34
 
+// Thermometer
 Adafruit_MLX90614 mlx = Adafruit_MLX90614();
 bool mlxOk = false;
 
 unsigned long currentTime = 0;
 unsigned long previousTime = 0;
 
+// Timer for current measurements
 hw_timer_t *timer = NULL;
 
-// measurement variables
+// Measurement variables
 const double resistor = 150.0; // 150 Ohm resistor connected to each coil
 float rpm = 0;
 volatile int holes;
 
-void getCurrent();
 unsigned long lastHoleTime = 0;
 const unsigned long RPM_TIMEOUT = 2000;
-// interrupt routine for rpm measurement
+// Interrupt routine for rpm measurement
 void IRAM_ATTR countHoles()
 {
     holes++;
     lastHoleTime = millis();
 }
+
+// Interrupt routine for current measurement - triggered by the timer
 void IRAM_ATTR onTimer()
 {
     getCurrent();
 }
 
+// Experimental function for checking RPM based on the sensors and connectivity status
 const char* rpmStatusToString(RpmStatus status)
 {
     switch (status)
@@ -55,6 +61,7 @@ const char* rpmStatusToString(RpmStatus status)
     }
 }
 
+// Experimental function for checking Current based on the sensors and connectivity status
 const char* currentStatusToString(CurrentStatus status)
 {
     switch (status)
@@ -77,9 +84,6 @@ void setupSensors()
     pinMode(PHASE3_PIN, INPUT);
     pinMode(OFFSET_PIN, INPUT);
 
-    // pinMode(21, INPUT_PULLUP);
-    // pinMode(22, INPUT_PULLUP);
-
     // Optocoupler setup
     pinMode(OPTO_PIN, INPUT_PULLUP);
     attachInterrupt(OPTO_PIN, countHoles, FALLING);
@@ -97,13 +101,14 @@ void setupSensors()
         delay(200);
     }
 
-    // timer generating interrupts for current readings
+    // Timer generating interrupts for current readings
     timer = timerBegin(0, 80, true);
     timerAttachInterrupt(timer, &onTimer, true);
     timerAlarmWrite(timer, 5000, true);
     timerAlarmEnable(timer);
 }
 
+// Function for setting the time reference for rpm measurement
 void setRPMTime()
 {
     previousTime = millis();
@@ -114,6 +119,7 @@ double phase2sum = 0;
 double phase3sum = 0;
 int measurementCount = 0;
 
+// Function for calculating the RMS value from the squared sum of the current measurements
 double getRMS(double squaredSum)
 {
     double meanSquared = squaredSum / static_cast<double>(measurementCount);
@@ -137,6 +143,7 @@ bool checkTempSensor()
     }
 }
 
+// Experimental function for checking the state of the rpm sensor based on the time since the last hole was detected and the current measurements
 RpmStatus checkRpmSensor()
 {
     unsigned long now = millis();
@@ -146,7 +153,7 @@ RpmStatus checkRpmSensor()
         return RPM_OK;
     }
 
-    if (getRMS(phase1sum) < 0.5) // finomhangold
+    if (getRMS(phase1sum) < 0.5) // Needs fine tuning!!!
     {
         return RPM_SENSOR_FAULT;
     }
@@ -154,6 +161,7 @@ RpmStatus checkRpmSensor()
     return RPM_NO_ROTATION;
 }
 
+// Experimental function for checking the state of the current sensor based on the RMS value of the current measurements
 CurrentStatus checkCurrentSensor()
 {
     if (measurementCount < 10)
@@ -184,12 +192,13 @@ double p1A = 0;
 double p2A = 0;
 double p3A = 0;
 
-// current
+// Function for reading the voltage from the current sensor
 double readVoltage(int pin)
 {
     return ((double(analogRead(pin)) * 3.3) / 4095.0);
 }
 
+// Function for converting the voltage reading to current in amps, taking into account the sensor's offset and the resistor value
 double voltsToAmps(double voltage, double offset)
 {
     voltage -= offset;
@@ -202,26 +211,7 @@ double voltsToAmps(double voltage, double offset)
     return (voltage / resistor) * 1000.0;
 }
 
-/*void getCurrent(){
-    double offset = readVoltage(OFFSET_PIN);
-    double phase_1 = voltsToAmps(readVoltage(PHASE1_PIN), offset);
-    double phase_2 = voltsToAmps(readVoltage(PHASE2_PIN), offset);
-    double phase_3 = voltsToAmps(readVoltage(PHASE3_PIN), offset);
-
-    String current = String(phase_1) + ";" + String(phase_2) + ";" + String(phase_3);
-    sendMqttMessage(AMP_TOPIC, current.c_str());
-}
-
-void getCurrent() {
-    if(measurementCount < sampleSize) {
-        double offset = readVoltage(OFFSET_PIN);
-        phase1Arr[measurementCount] = voltsToAmps(readVoltage(PHASE1_PIN), offset);
-        phase2Arr[measurementCount] = voltsToAmps(readVoltage(PHASE2_PIN), offset);
-        phase3Arr[measurementCount] = voltsToAmps(readVoltage(PHASE3_PIN), offset);
-        measurementCount++;
-    }
-}*/
-
+// Function for reading the current measurements
 void getCurrent()
 {
     double offset = readVoltage(OFFSET_PIN);
@@ -234,7 +224,7 @@ void getCurrent()
     measurementCount++;
 }
 
-
+// Function for sending the current measurements to the MQTT broker and resetting the measurement variables
 void sendCurrent()
 {
     timerAlarmDisable(timer);

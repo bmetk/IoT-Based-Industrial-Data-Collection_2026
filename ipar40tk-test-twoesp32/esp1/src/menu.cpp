@@ -42,8 +42,8 @@ const char *ok(bool v)
   return v ? "OK" : "ERR";
 }
 
-// New menu start
-//  Display queue kívülről jön (main.cpp)
+
+// Displayqueue from main.cpp
 extern QueueHandle_t displayQueue;
 
 //=========================
@@ -54,7 +54,7 @@ static int cursorIndex = 0;
 MenuState getCurrentMenu() { return currentMenu; }
 int getCursorIndex() { return cursorIndex; }
 
-// időzített eseményekhez
+// Variables for handling actions in the menu
 static unsigned long actionStart = 0;
 static bool actionActive = false;
 
@@ -109,7 +109,7 @@ void handleMenuEvent(MenuEvent event)
 {
   switch (currentMenu)
   {
-  //----------------------------------
+  // HOME TAB - only navigation, no actions
   case MENU_HOME:
     if (event == EVENT_NEXT)
       currentMenu = MENU_ERROR;
@@ -118,7 +118,7 @@ void handleMenuEvent(MenuEvent event)
       cursorIndex = 0;
     break;
 
-  //----------------------------------
+  // ERROR TAB - only navigation, no actions
   case MENU_ERROR:
     if (event == EVENT_NEXT)
       currentMenu = MENU_SETTINGS;
@@ -127,7 +127,7 @@ void handleMenuEvent(MenuEvent event)
       cursorIndex = 0;
     break;
 
-  //----------------------------------
+  // SETTINGS TAB - navigation and actions
   case MENU_SETTINGS:
     if (event == EVENT_NEXT)
       cursorIndex = (cursorIndex + 1) % 3;
@@ -152,7 +152,7 @@ void handleMenuEvent(MenuEvent event)
     }
     break;
 
-  //----------------------------------
+  // SETTINGS_TOGGLE TAB - navigation and actions
   case MENU_SETTINGS_TOGGLE:
     if (event == EVENT_NEXT)
       cursorIndex = (cursorIndex + 1) % 3;
@@ -162,14 +162,17 @@ void handleMenuEvent(MenuEvent event)
       switch (cursorIndex)
       {
       case 0:
+        // toggle data collection for ESP1
         toggleEsp1();
         break;
 
       case 1:
+        // toggle data collection for ESP2
         toggleEsp2();
         break;
 
       case 2:
+        // back to settings menu
         currentMenu = MENU_SETTINGS;
         cursorIndex = 0;
         break;
@@ -177,7 +180,7 @@ void handleMenuEvent(MenuEvent event)
     }
     break;
 
-  //----------------------------------
+  // SETTINGS_RESTART TAB - navigation and actions
   case MENU_SETTINGS_RESTART:
     if (event == EVENT_NEXT)
       cursorIndex = (cursorIndex + 1) % 3;
@@ -200,6 +203,7 @@ void handleMenuEvent(MenuEvent event)
         break;
 
       case 2:
+        // back to settings menu
         currentMenu = MENU_SETTINGS;
         cursorIndex = 0;
         break;
@@ -207,12 +211,12 @@ void handleMenuEvent(MenuEvent event)
     }
     break;
 
-  //----------------------------------
+  // MESSAGE TAB - only navigation, no actions
   case MENU_MESSAGE:
     // No button events are handled in this state
     break;
   }
-
+  // After handling the event, request a display update to reflect any changes
   requestDisplayUpdate();
 }
 
@@ -228,25 +232,16 @@ void menuLoop()
     requestDisplayUpdate();
   }
 }
-// New menu end
-//------------------------------------------------------------------
-//  NAVIGATION
-//
-//  The menu system uses a finite state state machine, where
-//  the current state is stored in an array. The first element
-//  corresponds to the highest menu level and the last to the lowest.
-//------------------------------------------------------------------
+
 
 bool sendMeasurements = true;
-
 //-----------------
 // HOME TAB CONTENT
 //-----------------
 const char *espHealth[] = {"ON", "ERR", "OFF"};
 const int homeRow = 3;
 const int homeCol = 3;
-// String espStatus[2][2] = {{espHealth[0], espHealth[0]},
-//                         {espHealth[0], espHealth[0]}};
+// home tab content is updated in the homeTab() function, but the initial state is set here
 String homeContent[homeRow][homeCol] = {{"", "ONLINE", "SENSOR"},
                                         {"ESP 1", espHealth[0], espHealth[0]},
                                         {"ESP 2", espHealth[0], espHealth[0]}};
@@ -288,7 +283,7 @@ const String settingsSubmenu[settingsRow] = {"TOGGLE", "RESTART"};
 bool enableDataCollection = true;
 
 //-----------------------------------------------
-// create an OLED display object connected to I2C
+// Create an OLED display object connected to I2C
 //-----------------------------------------------
 Adafruit_SSD1306 oled(SCREEN_W, SCREEN_H, &Wire, -1);
 
@@ -346,18 +341,6 @@ void setErrorEnable(int index, int value)
   errorEnable[index] = value;
 }
 
-//------------------------------------------------------------
-// Checks Serial2 for messages and updates content accordingly
-//
-// Codes:
-//    - ONLINE             0x01
-//    - OFFLINE (error)    0x02
-//    - OFFLINE (manula)   0x04
-//    - MPU DOWN           0x08
-//    - MPU UP             0x10
-//
-//------------------------------------------------------------
-u_char prevMsg = 0;
 
 //-------------------------------
 // Prints the current tabs header
@@ -372,6 +355,9 @@ void printTabHeader(String title)
   oled.setTextColor(WHITE);
 }
 
+//-------------------------------
+// Function for checking the state of ESP1 and ESP2 and updating the home tab content accordingly
+//-------------------------------
 void updateHomeData()
 {
   /*
@@ -430,12 +416,12 @@ void homeTab()
   oled.clearDisplay();
   printTabHeader("HOME");
 
-  // grid
+  // Grid
   oled.drawLine(SCREEN_W / 3, headerHeight, SCREEN_W / 3, SCREEN_H - 1, WHITE);
   oled.drawLine(2 * SCREEN_W / 3 - 1, headerHeight, 2 * SCREEN_W / 3 - 1, SCREEN_H - 1, WHITE);
   oled.drawLine(0, headerHeight + offsetY, SCREEN_W - 1, headerHeight + offsetY, WHITE);
   updateHomeData();
-  // content
+  // Content
   for (int i = 0; i < homeRow; i++)
   {
     for (int j = 0; j < homeCol; j++)
@@ -447,7 +433,6 @@ void homeTab()
       oled.print(homeContent[i][j]);
     }
   }
-  // renderEsp2();
 }
 
 //------------------------------------------------------
@@ -512,7 +497,7 @@ void settingsTab()
   String esp2StateStr = esp2.collecting ? "ON" : "OFF";
   switch (state)
   {
-  //----------------------------------
+  // Settings main menu
   case MENU_SETTINGS:
     oled.setCursor(20, headerHeight);
     oled.print("Toggle ESP's");
@@ -526,7 +511,7 @@ void settingsTab()
     drawCursor(cursorIndex);
     break;
 
-  //----------------------------------
+  // Toggle submenu
   case MENU_SETTINGS_TOGGLE:
     oled.setCursor(20, headerHeight);
     oled.println("Toggle ESP1: " + esp1StateStr);
@@ -540,7 +525,7 @@ void settingsTab()
     drawCursor(cursorIndex);
     break;
 
-  //----------------------------------
+  // Restart submenu
   case MENU_SETTINGS_RESTART:
     oled.setCursor(20, headerHeight);
     oled.print("Restart ESP1");
@@ -590,9 +575,11 @@ void toggleEsp2()
   - set flag to enable/disable measurements (suspend/resume task2)
   - set home tab content to ok/off
   */
-  sendCommand(0x01); // code for toggle
+  sendCommand(0x01); // Code for toggle
 }
-
+//-------------------------------
+// Function for assembling the display content of the home tab based on the current state of ESP1
+// ------------------------------
 bool readStatus(Esp2Status *dest)
 {
   static uint8_t buffer[sizeof(Esp2Status)];
@@ -611,18 +598,18 @@ bool readStatus(Esp2Status *dest)
 
     if (index == sizeof(Esp2Status))
     {
-      index = 0; // Kész, alaphelyzet a következőnek
+      index = 0; // Reset index for the next message
       Esp2Status tempMsg;
       memcpy(&tempMsg, buffer, sizeof(Esp2Status));
 
       if (tempMsg.checksum == calcChecksum(tempMsg))
       {
-        *dest = tempMsg; // Csak valid adatot írunk ki
+        *dest = tempMsg; // Copy the valid message to the destination
         return true;
       }
     }
   }
-
+  // If we receive bytes but the message is not complete, we check for a timeout to reset the index
   if (index > 0 && millis() - lastByteTime > 50)
   {
     index = 0; // Timeout reset
@@ -630,6 +617,7 @@ bool readStatus(Esp2Status *dest)
   return false;
 }
 
+// Function for updating the home tab content based on the received status message from ESP2
 void updateEsp2(Esp2Status msg)
 {
   esp2.online = msg.flags & FLAG_ONLINE;
@@ -643,6 +631,7 @@ void updateEsp2(Esp2Status msg)
   esp2.lastUpdate = millis();
 }
 
+// Function for checking if ESP2 has timed out (no messages received for a certain time) and updating the home tab content accordingly
 void checkEsp2Timeout()
 {
   if (millis() - esp2.lastUpdate > 15000)
@@ -652,42 +641,7 @@ void checkEsp2Timeout()
   }
 }
 
-void renderEsp2()
-{
-  oled.setCursor(0, 40);
-
-  if (!esp2.online)
-  {
-    oled.print("ESP2: OFFLINE");
-    return;
-  }
-
-  oled.print("ESP2: ");
-  oled.print(ok(esp2.mqttOk));
-
-  oled.setCursor(0, 50);
-  oled.print("MPU: ");
-  oled.print(ok(esp2.mpuOk));
-
-  oled.setCursor(0, 60);
-  oled.print("TMP: ");
-  oled.print(ok(esp2.tempOk));
-}
-
-// void buildErrorList()
-// {
-//   errorCount = 0;
-
-//   if (!esp2.online)
-//     addError("ESP2 OFFLINE");
-
-//   if (!esp2.mpuOk)
-//     addError("ACCEL FAIL");
-
-//   if (!esp2.tempOk)
-//     addError("TEMP FAIL");
-// }
-
+// Function for publishing ESP1's status to the MQTT broker
 void publishEsp1Status()
 {
   StaticJsonDocument<256> doc;

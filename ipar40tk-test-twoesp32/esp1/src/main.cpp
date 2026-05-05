@@ -32,8 +32,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////////////////
 
-TaskHandle_t Task1;
-TaskHandle_t Task2;
+TaskHandle_t ButtonHandler;
+TaskHandle_t ReadandSendSensorData;
+// Mutex for handling button presses
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
 volatile bool nextPressed = false;
@@ -125,9 +126,9 @@ void IRAM_ATTR enterOnPress()
 }
 
 //----------------------------------------------
-// Function for Task1 - handling the menu system
+// Function ButtonHandler - handling button events and menu state | selfchecking ESP1's health
 //----------------------------------------------
-void Task1code(void *pvParameters)
+void ButtonHandler(void *pvParameters)
 {
   for (;;)
   {
@@ -159,9 +160,9 @@ void Task1code(void *pvParameters)
 }
 
 //------------------------------------------------------------
-// Function for Task2 - reading sensor data and sending it out
+// Function ReadandSendSensorData - reading sensor data and sending it out | checking serial  messages from ESP2
 //------------------------------------------------------------
-void Task2code(void *pvParameters)
+void ReadandSendSensorData(void *pvParameters)
 {
   previousMillis = millis();
   clearSerialInterconn();
@@ -187,15 +188,14 @@ void Task2code(void *pvParameters)
       }
     }
 
-    if (checkSendMeasurements())
-    {                          // check if acceleration data is ready
+    if (checkSendMeasurements()) // check if the flag is set to send measurements (set in the menu when entering the home tab)
+    {
       resetSendMeasurements(); // reseting the flag
-      sendCurrent();
-      getRpm();
-      getTempC();
-      // sendCommand(0x01);
+      sendCurrent(); // sending the current measurement
+      getRpm(); // send the rpm measurement
+      getTempC(); // send the temperature measurement
     }
-    // check if acceleration data is ready
+    // send measurements every 1.3 seconds if collection is enabled
     if (millis() - previousMillis > measurementInterval && isCollectionEnabled())
     {
       sendCurrent();
@@ -207,14 +207,16 @@ void Task2code(void *pvParameters)
     vTaskDelay(10);
   }
   static unsigned long lastPing = 0;
-
+  // send a ping to ESP2 every 5 seconds to check if it's online
   if (millis() - lastPing > 5000)
   {
     sendCommand(0x00); // ping
     lastPing = millis();
   }
 }
-
+//------------------------------------------------------------
+// Function DisplayTask - handling the display content
+//------------------------------------------------------------
 void DisplayTask(void *pvParameters)
 {
   DisplayMessage msg;
@@ -249,8 +251,10 @@ void DisplayTask(void *pvParameters)
     }
   }
 }
-
-void statusTask(void *pv)
+//------------------------------------------------------------
+// Function StatusTask - handling the status updates
+//------------------------------------------------------------
+void StatusTask(void *pv)
 {
   for (;;)
   {
@@ -260,7 +264,7 @@ void statusTask(void *pv)
   }
 }
 
-//    Setup
+// Setup
 void setup()
 {
   setCpuFrequencyMhz(240);
@@ -268,63 +272,66 @@ void setup()
   Serial.begin(115200);
   // Create a queue for display messages
   displayQueue = xQueueCreate(1, sizeof(DisplayMessage));
-
+  // Setting up the buttons with pullup/pulldown resistors
   pinMode(NEXT_PIN, INPUT_PULLUP);
   pinMode(ENTER_PIN, INPUT_PULLUP);
   pinMode(DRDY_PIN, INPUT_PULLDOWN);
-
+  // Setting up the buttons with interrupts
   attachInterrupt(NEXT_PIN, nextOnPress, FALLING);
   attachInterrupt(ENTER_PIN, enterOnPress, FALLING);
 
-  // starting up the sensors and the wireless connection
+  // Setting up the connectivity and sensors
   initCom();
   setupSensors();
 
-  // setting up the display
+  // Setting up the display
   setupDisplay();
 
+  // Create a task that will be executed in the DisplayTask() function, with priority 1 and executed on core 0
   xTaskCreatePinnedToCore(
-      DisplayTask,
-      "DisplayTask",
-      4096,
-      NULL,
-      1,
-      NULL,
-      0);
+      DisplayTask, /* task function. */
+      "DisplayTask", /* name of task. */
+      4096, /* stack size of task */
+      NULL, /* parameter of the task */
+      1, /* priority of the task */
+      NULL, /* task handle to keep track of created task */
+      0); /* pin task to core 0 */
 
   vTaskDelay(pdMS_TO_TICKS(50));
+  // Initializing the menu system
   menuInit();
 
-  // create a task that will be executed in the Task1code() function, with priority 1 and executed on core 0
+  // Create a task that will be executed in the ButtonHandler() function, with priority 1 and executed on core 0
   xTaskCreatePinnedToCore(
-      Task1code, /* Task function. */
-      "Task1",   /* name of task. */
-      10000,     /* Stack size of task */
+      ButtonHandler, /* task function. */
+      "ButtonHandler",   /* name of task. */
+      10000,     /* stack size of task */
       NULL,      /* parameter of the task */
       1,         /* priority of the task */
-      &Task1,    /* Task handle to keep track of created task */
+      &ButtonHandler,    /* task handle to keep track of created task */
       0);        /* pin task to core 0 */
   delay(500);
 
-  // create a task that will be executed in the Task2code() function, with priority 1 and executed on core 1
+  // Create a task that will be executed in the ReadandSendSensorData() function, with priority 2 and executed on core 1
   xTaskCreatePinnedToCore(
-      Task2code, /* Task function. */
-      "Task2",   /* name of task. */
-      15000,     /* Stack size of task */
+      ReadandSendSensorData, /* task function. */
+      "ReadandSendSensorData",   /* name of task. */
+      15000,     /* stack size of task */
       NULL,      /* parameter of the task */
       2,         /* priority of the task */
-      &Task2,    /* Task handle to keep track of created task */
+      &ReadandSendSensorData,    /* task handle to keep track of created task */
       1);        /* pin task to core 1 */
   delay(500);
 
+  // Create a task that will be executed in the StatusTask() function, with priority 1 and executed on core 0
   xTaskCreatePinnedToCore(
-      statusTask,
-      "statusTask",
-      4096,
-      NULL,
-      1,
-      NULL,
-      0);
+      StatusTask, /* task function. */
+      "StatusTask", /* name of task. */
+      4096, /* stack size of task */
+      NULL, /* parameter of the task */
+      1, /* priority of the task */
+      NULL, /* task handle to keep track of created task */
+      0); /* pin task to core 0 */
 }
 
 void loop()

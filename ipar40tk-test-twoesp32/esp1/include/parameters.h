@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 
+//PINOUTS
 // menu.cpp - SSD1306 display 
 #define DISP_ADDR 	0x3C
 #define SCREEN_W 	128 // OLED width,  in pixels
@@ -36,7 +37,7 @@ const int offsetX = SCREEN_W/3;
 const int offsetY = textHeight + textSize;
 
 
-// BITMAP logo
+// BITMAP logo - Currently not shown
 #define BMETK_WIDTH  65
 #define BMETK_HEIGHT 64
 

@@ -1,6 +1,6 @@
 #ifndef MEASUREMENT_H
 #define MEASUREMENT_H
-
+// Experimental RPM and Current sensor statuses
 enum RpmStatus
 {
     RPM_OK,
@@ -13,7 +13,7 @@ enum CurrentStatus {
     CURRENT_NO_LOAD,
     CURRENT_SENSOR_FAULT
 };
-
+// Function prototypes
 void setupSensors();
 void getCurrent();
 void sendCurrent();
@@ -25,5 +25,4 @@ RpmStatus checkRpmSensor();
 CurrentStatus checkCurrentSensor();
 const char* rpmStatusToString(RpmStatus status);
 const char* currentStatusToString(CurrentStatus status);
-
 #endif
