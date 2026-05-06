@@ -1,5 +1,5 @@
 import dash
-from dash import html, dcc, Input, Output, State, callback, no_update
+from dash import html, dcc, Input, Output, State, callback, ctx
 import dash_bootstrap_components as dbc
 import json
 import requests
@@ -35,6 +35,10 @@ layout = dbc.Container([
         dbc.Col([
             dbc.Button("Apply preset", id="apply-preset", color="primary")
         ], width=4),
+
+        dbc.Col([
+            dbc.Button("Apply config", id="apply-config", color="success")
+        ], width=2, style={"marginTop": "20px"})
     ], className="mb-3"),
 
     html.Hr(),
@@ -111,10 +115,7 @@ layout = dbc.Container([
 
             html.Label("Fault intensity"),
             dcc.Slider(id="fault-intensity", min=0, max=1, step=0.05, value=0)
-        ]),
-        dbc.Col([
-            dbc.Button("Apply config", id="apply-config", color="success")
-        ], width=2, style={"marginTop": "20px"})
+        ])
     ]),
     
     dbc.Card([
@@ -131,45 +132,69 @@ layout = dbc.Container([
 ])
 
 @callback(
+    Output("rpm-mode", "value"),
+    Output("load-mode", "value"),
+    Output("wear-slider", "value"),
+    Output("wear-rate", "value"),
+    Output("fault-mode", "value"),
+    Output("fault-intensity", "value"),
     Output("config-preview", "children"),
-    Output("sim-config-store", "data"),
-    Input("rpm-mode", "value"),
-    Input("load-mode", "value"),
-    Input("wear-slider", "value"),
-    Input("wear-rate", "value"),
-    Input("fault-mode", "value"),
-    Input("fault-intensity", "value"),
+    Input("sim-config-store", "data"),
 )
-def build_config(rpm, load, wear, wear_rate, fault, intensity):
+def load_from_store(config):
 
-    config = {
-        "rpm_mode": rpm,
-        "load": load,
-        "wear": wear,
-        "wear_rate": wear_rate,
-        "fault": fault,
-        "fault_intensity": intensity
-    }
+    if not config:
+        config = {
+            "rpm_mode": "low",
+            "load": "idle",
+            "wear": 0,
+            "wear_rate": 0.002,
+            "fault": None,
+            "fault_intensity": 0
+        }
 
-    return json.dumps(config, indent=2), config
+    return (
+        config.get("rpm_mode", "low"),
+        config.get("load", "idle"),
+        config.get("wear", 0),
+        config.get("wear_rate", 0.002),
+        config.get("fault", None),
+        config.get("fault_intensity", 0),
+        json.dumps({
+            "rpm_mode": config.get("rpm_mode", "low"),
+            "load": config.get("load", "idle"),
+            "wear": config.get("wear", 0),
+            "wear_rate": config.get("wear_rate", 0.002),
+            "fault": config.get("fault", None),
+            "fault_intensity": config.get("fault_intensity", 0),
+        }, indent=2)
+    )
+
 
 @callback(
-    Input("apply-config", "n_clicks"),
+    Input("sim-config-store", "data"),
     State("machine-store", "data"),
-    State("sim-config-store", "data"),
     prevent_initial_call=True
 )
-def apply_config(_, machine, config):
+def push_to_api(config, machine):
 
     if not machine or not config:
-        return no_update
-
+        return
+    if ctx.triggered_id != "apply-config":
+        return
     requests.post(
         f"http://simulator:9000/config/{machine}",
         params=config
     )
 
-    return no_update
+DEFAULT_CONFIG = {
+    "rpm_mode": "low",
+    "load": "idle",
+    "wear": 0,
+    "wear_rate": 0.002,
+    "fault": None,
+    "fault_intensity": 0
+}
 
 PRESETS = {
     "normal": {
@@ -199,25 +224,35 @@ PRESETS = {
 }
 
 @callback(
-    Output("rpm-mode", "value"),
-    Output("load-mode", "value"),
-    Output("wear-slider", "value"),
-    Output("wear-rate", "value"),
-    Output("fault-mode", "value"),
-    Output("fault-intensity", "value"),
+    Output("sim-config-store", "data"),
     Input("apply-preset", "n_clicks"),
+    Input("apply-config", "n_clicks"),
     State("preset-selector", "value"),
+    State("rpm-mode", "value"),
+    State("load-mode", "value"),
+    State("wear-slider", "value"),
+    State("wear-rate", "value"),
+    State("fault-mode", "value"),
+    State("fault-intensity", "value"),
     prevent_initial_call=True
 )
-def apply_preset(_, preset):
+def update_store(preset_click, config_click, preset, rpm, load, wear, wear_rate, fault, intensity):
 
-    p = PRESETS.get(preset, {})
+    trigger = ctx.triggered_id
 
-    return (
-        p.get("rpm_mode", "low"),
-        p.get("load", "idle"),
-        p.get("wear", 0),
-        p.get("wear_rate", 0.002),
-        p.get("fault", None),
-        p.get("fault_intensity", 0),
-    )
+    if trigger == "apply-preset":
+        base = DEFAULT_CONFIG.copy()
+        base.update(PRESETS.get(preset, {}))
+        return base
+
+    if trigger == "apply-config":
+        return {
+            "rpm_mode": rpm,
+            "load": load,
+            "wear": wear,
+            "wear_rate": wear_rate,
+            "fault": fault,
+            "fault_intensity": intensity
+        }
+
+    raise dash.exceptions.PreventUpdate

@@ -12,7 +12,7 @@ app = dash.Dash(
 app.layout = dbc.Container([
 
     dcc.Store(id="machine-store", storage_type="local"),
-    dcc.Store(id="sim-config-store", storage_type="session"),
+    dcc.Store(id="sim-config-store", storage_type="local"),
 
     dcc.Interval(
         id="refresh",

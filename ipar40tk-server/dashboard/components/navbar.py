@@ -48,7 +48,7 @@ API_URL = "http://simulator:9000"
 
 @callback(
     Output("sim-toggle", "label"),
-    Output("sim-toggle", "value"),
+    #Output("sim-toggle", "value"),
     Input("sim-toggle", "value"),
     Input("machine-selector", "value"),
     State("sim-config-store", "data"),
