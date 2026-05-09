@@ -23,6 +23,7 @@ navbar = dbc.Navbar(
             dbc.NavLink("Vibration Analytics", href="/vibration"),
             dbc.NavLink("Anomalies", href="/anomalies"),
             dbc.NavLink("Simulation", href="/simulation"),
+            dbc.NavLink("Experimental Features", href="/experimental"),
             dbc.NavLink("About", href="/about"),
 
         ], navbar=True),

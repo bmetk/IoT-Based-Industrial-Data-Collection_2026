@@ -48,16 +48,14 @@ def calculate_fft(vib: Array) -> np.ndarray:
 
     return spectrum
 
-
-def calculate_rms(vib: Array) -> float:
-    """Alias for RMS calculation."""
-    return rms(vib)
-
-
 def get_psd(vib: Array) -> tuple[list[float], list[float]]:
     """Power spectral density using periodogram."""
     f, psd = signal.periodogram(vib, fs=SAMPLING_FREQ, window="hamming")
     return f.tolist(), psd.tolist()
+
+def psd_peak(vib: Array) -> float:
+    f, psd = signal.periodogram(vib, fs=SAMPLING_FREQ, window="hamming")
+    return float(np.max(psd))
 
 def spectral_energy(vib):
     spectrum = np.abs(rfft(vib))
@@ -178,20 +176,23 @@ def process_vibration(machine, axis, vib):
     print(np.max(vib))
     rms_val = rms(vib)
     fft_val = fft_peak(vib)
+    psd_val = psd_peak(vib)
     energy = spectral_energy(vib)
     write_feature(machine, f"{axis}_rms", rms_val)
     write_feature(machine, f"{axis}_fft_peak", fft_val)
+    write_feature(machine, f"{axis}_psd_peak", psd_val)
 
     update_state(machine, f"{axis}_rms", rms_val)
     update_state(machine, f"{axis}_fft_peak", fft_val)
+    update_state(machine, f"{axis}_psd_peak", psd_val)
 
     fft_vals = calculate_fft(vib)
     freqs = np.linspace(0, SAMPLING_FREQ / 2, len(fft_vals))
 
     # Downsample FFT 
-    step = 4
-    fft_vals = fft_vals[::step]
-    freqs = freqs[::step]
+    #step = 4
+    #fft_vals = fft_vals[::step]
+    #freqs = freqs[::step]
 
     # Filter frequencies up to 500 Hz
     mask = freqs <= 500
@@ -199,12 +200,12 @@ def process_vibration(machine, axis, vib):
     fft_vals = fft_vals[mask]
 
     # Top-N frequency components
-    N = 20
-    idx = np.argsort(fft_vals)[-N:]
-    idx = idx[np.argsort(freqs[idx])]
+    #N = 20
+    #idx = np.argsort(fft_vals)[-N:]
+    #idx = idx[np.argsort(freqs[idx])]
 
-    freqs_top = freqs[idx]
-    amps_top = fft_vals[idx]
+    freqs_top = freqs#[idx]
+    amps_top = fft_vals#[idx]
 
     write_fft(machine, axis, freqs_top, amps_top)
     
@@ -214,16 +215,20 @@ def process_vibration(machine, axis, vib):
     tempC = get_state(machine, "temperature")
     vibX_fft_peak = get_state(machine, "vibX_fft_peak")
     vibX_rms = get_state(machine, "vibX_rms")
+    vibX_psd_peak = get_state(machine, "vibX_psd_peak")
     vibY_fft_peak = get_state(machine, "vibY_fft_peak")
     vibY_rms = get_state(machine, "vibY_rms")
+    vibY_psd_peak = get_state(machine, "vibY_psd_peak")
     vibZ_fft_peak = get_state(machine, "vibZ_fft_peak")
     vibZ_rms = get_state(machine, "vibZ_rms")
+    vibZ_psd_peak = get_state(machine, "vibZ_psd_peak")
     print("CURRENT IMBALANCE:", current_imbalance)
     print("CURRENT MEAN:", current_mean)
     print("RPM:", rpm)
     print("TEMPERATURE:", tempC)
     print("VIBX FFT PEAK:", vibX_fft_peak)
     print("VIBX RMS:", vibX_rms)
+    print("VIBX PSD PEAK:", vibX_psd_peak)
     if None in [current_imbalance, current_mean, rpm, tempC, vibX_fft_peak, vibX_rms, vibY_fft_peak, vibY_rms, vibZ_fft_peak, vibZ_rms]:
         return
         
@@ -241,6 +246,7 @@ def process_vibration(machine, axis, vib):
 
     write_feature(machine, "anomaly_severity", result["severity"])
     write_feature(machine, "is_anomaly", int(result["is_anomaly"]))
-
+    write_feature(machine, "health", result["health"])
+    write_feature_state(machine, "state", result["state"])
     if result["rul"] is not None:
         write_feature(machine, "rul", result["rul"])

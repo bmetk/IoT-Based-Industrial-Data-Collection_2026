@@ -9,6 +9,16 @@ client = InfluxDBClient(
 
 write_api = client.write_api()
 
+def write_feature_state(machine, feature_name, value):
+
+    point = (
+        Point("lathe_features")
+        .tag("machine", machine)
+        .field(feature_name, value)
+    )
+
+    write_api.write(bucket=INFLUX_BUCKET, record=point)
+
 # Write transformed data.
 def write_feature(machine, feature_name, value):
 

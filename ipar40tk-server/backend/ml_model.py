@@ -161,40 +161,108 @@ def predict(feature_vector):
     severity = threshold - score if is_anomaly else 0
 
     #  RUL
-    rul = update_rul(state, score)
+    rul, health = update_rul(state, score)
 
     return {
         "score": score,
         "state": state,
         "is_anomaly": is_anomaly,
         "severity": severity,
-        "rul": rul
+        "rul": rul,
+        "health": round(health * 100, 1),
     }
+
+# ============================================================
+# RUL MODEL
+# ============================================================
+
+MAX_RUL_HOURS = 3500
 
 RUL_WINDOW = 100
 
 def create_rul_entry():
     return {
-        "history": deque(maxlen=RUL_WINDOW)
+        "history": deque(maxlen=RUL_WINDOW),
+
+        # accumulated degradation
+        "wear": 0.0,
+
+        # current estimated health
+        "health": 1.0,
+
+        # smoothed degradation rate
+        "degradation_rate": 0.0
     }
 
-rul_models = {state: create_rul_entry() for state in STATES}
+rul_models = { state: create_rul_entry() for state in STATES}
+
+def normalize_score(state, score):
+
+    threshold = models[state]["threshold"]
+
+    # baseline healthy score reference
+    healthy_ref = 0.10
+
+    # normalize into 0..1
+    normalized = (score - threshold) / (healthy_ref - threshold)
+
+    return np.clip(normalized, 0.0, 1.0)
+
 
 def update_rul(state, score):
+
     entry = rul_models[state]
+
     entry["history"].append(score)
 
-    if len(entry["history"]) < 20:
-        return None
+    if len(entry["history"]) < 10:
+        return MAX_RUL_HOURS, entry["health"]
 
-    y = np.array(entry["history"])
+    # --------------------------------------------------------
+    # HEALTH INDEX
+    # --------------------------------------------------------
 
-    # exponenciális smoothing trend
-    trend = np.mean(np.diff(y[-10:]))
+    health = normalize_score(state, score)
 
-    if trend >= 0:
-        return None
+    # smooth health
+    prev_health = entry["health"]
 
-    CRITICAL = models[state]["threshold"]
+    smoothed_health = (
+        0.9 * prev_health +
+        0.1 * health
+    )
 
-    return max(0, (CRITICAL - y[-1]) / trend)
+    entry["health"] = smoothed_health
+
+    # --------------------------------------------------------
+    # DEGRADATION
+    # --------------------------------------------------------
+
+    degradation = max(0.0, prev_health - smoothed_health)
+
+    # exponential smoothing
+    entry["degradation_rate"] = (
+        0.95 * entry["degradation_rate"] +
+        0.05 * degradation
+    )
+
+    deg_rate = entry["degradation_rate"]
+
+    # accumulate wear
+    entry["wear"] += deg_rate
+
+    # --------------------------------------------------------
+    # RUL ESTIMATION
+    # --------------------------------------------------------
+
+    estimated_used_life = entry["wear"] * MAX_RUL_HOURS
+
+    rul = MAX_RUL_HOURS - estimated_used_life
+
+    # anomaly accelerates degradation
+    if score < models[state]["threshold"]:
+        rul *= 0.97
+
+    rul = np.clip(rul, 0, MAX_RUL_HOURS)
+
+    return round(float(rul), 1), round(float(entry["health"]), 3)

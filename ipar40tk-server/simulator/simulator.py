@@ -23,9 +23,9 @@ def simulate_machine(machine_id, stop_event, config):
                 publish(f"factory/{machine_id}/speed/m0c70t3/rpm", rpm)
                 publish(f"factory/{machine_id}/current/zmct103c/amp", cur)
 
-                signal_x = model.vibration(rpm, wear, load, fault)
-                signal_y = model.vibration(rpm, wear, load, fault)
-                signal_z = model.vibration(rpm, wear, load, fault)
+                signal_x = model.vibration(rpm, wear, load, "vibX", fault, fault_intensity)
+                signal_y = model.vibration(rpm, wear, load, "vibY", fault, fault_intensity)
+                signal_z = model.vibration(rpm, wear, load, "vibZ", fault, fault_intensity)
 
                 publish_vibration(f"factory/{machine_id}/vibration/mpu9250/vibX", signal_x)
                 publish_vibration(f"factory/{machine_id}/vibration/mpu9250/vibY", signal_y)

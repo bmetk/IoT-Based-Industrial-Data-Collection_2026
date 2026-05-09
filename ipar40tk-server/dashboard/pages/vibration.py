@@ -39,7 +39,18 @@ layout = dbc.Container([
     ]),
 
     dbc.Row([
-        dbc.Col(dcc.Graph(id="psd-graph"))
+        dbc.Col([
+            dcc.Tabs(
+                id="vibration-psd-tabs",
+                value="vibX_psd_peak",
+                children=[
+                    dcc.Tab(label="X axis", value="vibX_psd_peak"),
+                    dcc.Tab(label="Y axis", value="vibY_psd_peak"),
+                    dcc.Tab(label="Z axis", value="vibZ_psd_peak")
+                ]
+            ),
+            dcc.Graph(id="psd-graph")
+        ])
     ])
 
 ])
@@ -52,12 +63,14 @@ layout = dbc.Container([
     Input("machine-selector","value"),
     Input("vibration-rms-tabs","value"),
     Input("vibration-fftpeak-tabs","value"),
+    Input("vibration-psd-tabs","value"),
     Input("refresh","n_intervals")
 )
-def update_vibration(machine, rms_axis, fftpeak_axis, _):
+def update_vibration(machine, rms_axis, fftpeak_axis, psd_axis, _):
 
     df_rms = query_vibration(machine, rms_axis)
     df_fftpeak = query_vibration(machine, fftpeak_axis)
+    df_psd = query_vibration(machine, psd_axis)
 
     fig_rms = go.Figure()
     fig_fftpeak = go.Figure()
@@ -100,5 +113,24 @@ def update_vibration(machine, rms_axis, fftpeak_axis, _):
 
         fig_fftpeak.update_xaxes(title="Time")
         fig_fftpeak.update_yaxes(title="Amplitude")
+
+    # PSD Peak
+    if df_psd is not None and not df_psd.empty:
+        df_psd = df_psd.sort_values("_time")
+
+        fig_psd.add_trace(go.Scatter(
+            x=df_psd["_time"],
+            y=df_psd["_value"],
+            mode="lines",
+            line=dict(color="green")
+        ))
+
+        fig_psd.update_layout(
+            title=f"PSD Peak {psd_axis}",
+            template="plotly_white"
+        )
+
+        fig_psd.update_xaxes(title="Time")
+        fig_psd.update_yaxes(title="Amplitude")
 
     return fig_rms, fig_fftpeak, fig_psd
