@@ -1,6 +1,8 @@
 from influxdb_client import InfluxDBClient
 import pandas as pd
 from config import *
+from influxdb_client.client.flux_table import FluxStructureEncoder
+import json
 
 client = InfluxDBClient(
     url=INFLUX_URL,
@@ -159,3 +161,70 @@ def query_status(machine):
         return None
 
     return df
+
+def query_home_export_data(machine: str, days: int):
+
+    query = f'''
+    from(bucket: "openmaps")
+      |> range(start: -{days}d)
+      |> filter(fn: (r) => r._measurement == "lathe_features")
+      |> filter(fn: (r) => r.machine == "{machine}")
+      |> pivot(
+            rowKey:["_time"],
+            columnKey:["_field"],
+            valueColumn:"_value"
+        )
+      |> keep(columns: [
+            "_time",
+            "current_mean",
+            "current_imbalance",
+            "rpm",
+            "tempC",
+            "vibX_rms",
+            "vibY_rms",
+            "vibZ_rms",
+            "vibX_fft_peak",
+            "vibY_fft_peak",
+            "vibZ_fft_peak"
+        ])
+    '''
+
+    result = query_api.query_data_frame(query)
+
+    if isinstance(result, list):
+        result = pd.concat(result, ignore_index=True)
+
+    return result
+
+def query_vibration_export_data(machine: str, days: int):
+
+    query = f'''
+    from(bucket: "openmaps")
+      |> range(start: -{days}d)
+      |> filter(fn: (r) => r._measurement == "lathe_features")
+      |> filter(fn: (r) => r.machine == "{machine}")
+      |> pivot(
+            rowKey:["_time"],
+            columnKey:["_field"],
+            valueColumn:"_value"
+        )
+      |> keep(columns: [
+            "_time",
+            "vibX_rms",
+            "vibY_rms",
+            "vibZ_rms",
+            "vibX_fft_peak",
+            "vibY_fft_peak",
+            "vibZ_fft_peak",
+            "vibX_psd_peak",
+            "vibY_psd_peak",
+            "vibZ_psd_peak"
+        ])
+    '''
+
+    result = query_api.query_data_frame(query)
+
+    if isinstance(result, list):
+        result = pd.concat(result, ignore_index=True)
+
+    return result

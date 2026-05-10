@@ -91,24 +91,6 @@ services:
     networks:
       - openmaps-net
 
-  analytics-download-service:
-    build: ./analytics-download
-    container_name: openmaps-analytics-download-service
-    restart: always
-    env_file:
-      - .env
-    depends_on:
-      - influxdb
-    environment:
-      - INFLUX_URL=${INFLUX_URL}
-      - INFLUX_TOKEN=${INFLUX_TOKEN_OPENMAPS}
-      - INFLUX_ORG=${INFLUX_ORG}
-      - INFLUX_BUCKET=${INFLUX_BUCKET}
-    ports:
-      - "5000:5000"
-    networks:
-      - openmaps-net
-
   simulator:
     build: ./simulator
     container_name: openmaps-simulator

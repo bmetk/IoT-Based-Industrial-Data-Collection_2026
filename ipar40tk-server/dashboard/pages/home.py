@@ -1,8 +1,11 @@
 import dash
-from dash import dcc, html, Input, Output, no_update
+from dash import dcc, html, Input, Output, no_update, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from influx_query import *
+from dash.dcc import send_bytes
+import pandas as pd
+import io
 
 dash.register_page(__name__, path="/")
 
@@ -42,8 +45,40 @@ layout = dbc.Container([
             dcc.Graph(id="vibration-graph")
         ])
 
-    ])
+    ]),
 
+    html.Br(),
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Export features data: Current-Mean, Current-Imbalance, RPM, Temperature, Vibraton RMS and FFT peaks by axis"),
+
+                dbc.CardBody([
+
+                    html.Label("Days back"),
+
+                    dcc.Slider(
+                        id="export-days",
+                        min=1,
+                        max=30,
+                        step=1,
+                        value=7,
+                        marks={i: str(i) for i in [1,3,7,14,30]}
+                    ),
+
+                    html.Br(),
+
+                    dbc.Button(
+                        "Download XLSX",
+                        id="download-home-xlsx-btn",
+                        color="primary"
+                    ),
+
+                    dcc.Download(id="download-home-xlsx")
+                ])
+            ])
+        ], width=12)
+    ])
 ])
 
 
@@ -171,3 +206,44 @@ def update_vibration(machine, axis, _):
     fig.update_yaxes(title="Amplitude", type="log")
 
     return fig
+
+@dash.callback(
+    Output("download-home-xlsx", "data"),
+    Input("download-home-xlsx-btn", "n_clicks"),
+    State("machine-selector", "value"),
+    State("export-days", "value"),
+    prevent_initial_call=True
+)
+def download_home_export(n_clicks, machine, days):
+
+    df = query_home_export_data(machine, days)
+
+    if df is None or df.empty:
+        return None
+
+    drop_cols = [
+        "result",
+        "table",
+        "_start",
+        "_stop"
+    ]
+
+    for col in drop_cols:
+        if col in df.columns:
+            df = df.drop(columns=[col])
+
+    df["_time"] = pd.to_datetime(df["_time"], utc=True)
+    df["_time"] = df["_time"].dt.tz_localize(None)
+
+    df = df.sort_values("_time")
+
+    output = io.BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="features")
+
+    output.seek(0)
+
+    filename = f"{machine}_{days}d_export.xlsx"
+
+    return send_bytes(output.getvalue(), filename)
