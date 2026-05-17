@@ -1,8 +1,6 @@
 from influxdb_client import InfluxDBClient
 import pandas as pd
 from config import *
-from influxdb_client.client.flux_table import FluxStructureEncoder
-import json
 
 client = InfluxDBClient(
     url=INFLUX_URL,

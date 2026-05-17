@@ -22,16 +22,10 @@ def publish(topic, value):
         value = json.dumps(value)
         client.publish(topic, value)
 
-def publish_vibration(topic, signal, chunk_size=128):
-    n = len(signal)
+def publish_vibration(topic, signal):
 
-    for s in range(0, n, chunk_size):
-        chunk = signal[s:s+chunk_size]
-
-        payload = {
-            "s": s,
-            "c": len(chunk),
-            "d": chunk
-        }
-
-        client.publish(topic, json.dumps(payload))
+    with mqtt_lock:
+        client.publish(
+            topic,
+            json.dumps(signal)
+        )

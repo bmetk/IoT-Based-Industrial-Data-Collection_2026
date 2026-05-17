@@ -13,14 +13,14 @@ layout = dbc.Container([
 
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader("Operating State"),
+                dbc.CardHeader("Machine Health"),
                 dbc.CardBody(html.H4(id="exp-state"))
                 ])
         ], width=3),
 
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader("Machine Health"),
+                dbc.CardHeader("Operating State"),
                 dbc.CardBody(html.H3(id="exp-health"))
             ])
         ], width=3),
