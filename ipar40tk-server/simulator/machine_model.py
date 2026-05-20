@@ -13,6 +13,15 @@ BASE_PATH = Path("/app/baselines")
 
 STATE_FILES = {
     "low-rpm_idle_filled": "low-rpm_idle_filled_simulator.xlsx",
+    "mid-rpm_idle_filled": "mid-rpm_idle_filled_simulator.xlsx",
+    "high-rpm_idle_filled": "high-rpm_idle_filled_simulator.xlsx",
+    "low-rpm_low-stress_filled": "low-rpm_low-stress_filled_simulator.xlsx",
+    "mid-rpm_low-stress_filled": "mid-rpm_low-stress_filled_simulator.xlsx",
+    "high-rpm_low-stress_filled": "high-rpm_low-stress_filled_simulator.xlsx",
+    "low-rpm_high-stress_filled": "low-rpm_high-stress_filled_simulator.xlsx",
+    "mid-rpm_high-stress_filled": "mid-rpm_high-stress_filled_simulator.xlsx",
+    "high-rpm_high-stress_filled": "high-rpm_high-stress_filled_simulator.xlsx",
+
 }
 
 CACHE = {}
