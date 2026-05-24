@@ -1,12 +1,24 @@
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
 import numpy as np
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import classification_report
 import pandas as pd
 import os
-from collections import deque
+from collections import deque, Counter
 import numpy as np
 
 state_clf = None
+
+STATE_HISTORY_SIZE = 10
+
+state_history = deque(maxlen=STATE_HISTORY_SIZE)
+
+current_stable_state = None
+
+transition_counter = 0
+
+TRANSITION_REQUIRED = 5
+
 def set_state_clf(clf):
     global state_clf
     state_clf = clf
@@ -32,7 +44,7 @@ def load_baselines(folder):
             raise RuntimeError(f"Missing baseline file for state: {state}")
 
         df = pd.read_excel(path)
-
+        print(df[FEATURE_COLUMNS].dtypes)
         # csak feature oszlopok
         X = df[FEATURE_COLUMNS].values
 
@@ -49,6 +61,7 @@ def load_baselines(folder):
         entry["fitted"] = True
         print(f"[INFO] Loaded states: {[s for s in models if models[s]['fitted']]}")
         print(f"[INFO] Loaded baseline for {state}, samples: {len(X)}")
+        
 
 
 models = {}
@@ -73,23 +86,6 @@ for state in STATES:
     models[state] = create_entry()
 
 
-def get_operating_state(rpm: float, current_mean: float) -> str:
-    if rpm < 550:
-        speed = "low"
-    elif rpm < 800:
-        speed = "mid"
-    else:
-        speed = "high"
-
-    if current_mean < 3.5:
-        load = "idle"
-    elif current_mean < 5.0:
-        load = "low-stress"
-    else:
-        load = "high-stress"
-
-    return f"{speed}-rpm_{load}_filled"
-
 def compute_threshold(model, scaler, X):
     X_scaled = scaler.transform(X)
     scores = model.decision_function(X_scaled)
@@ -105,6 +101,7 @@ def load_training_data(folder):
     for state in STATES:
         path = os.path.join(folder, f"{state}.xlsx")
         df = pd.read_excel(path)
+        df = df.iloc[5:].reset_index(drop=True)
 
         df["state"] = state
         dfs.append(df)
@@ -123,7 +120,51 @@ def train_state_classifier(df):
     )
 
     clf.fit(X, y)
+
+    print("\n=== FEATURE IMPORTANCE ===")
+
+    for feature, importance in sorted(zip(FEATURE_COLUMNS, clf.feature_importances_), key=lambda x: x[1], reverse=True):
+        print(f"{feature}: {importance:.4f}")
+    pred = clf.predict(X)
+
+    print(classification_report(y, pred))
+    sample = df[df["state"]=="mid-rpm_idle_filled"]
+
+    print(sample[FEATURE_COLUMNS].mean())
     return clf
+
+def smooth_state(predicted_state):
+
+    global current_stable_state
+    global transition_counter
+
+    state_history.append(predicted_state)
+
+    # Majority vote
+    majority_state = Counter(state_history).most_common(1)[0][0]
+
+    # First initialization
+    if current_stable_state is None:
+        current_stable_state = majority_state
+        return current_stable_state
+
+    # Same state -> stable
+    if majority_state == current_stable_state:
+        transition_counter = 0
+        return current_stable_state
+
+    # Different state candidate
+    transition_counter += 1
+
+    # Accept transition only after repeated confirmations
+    if transition_counter >= TRANSITION_REQUIRED:
+
+        print(f"[STATE CHANGE] {current_stable_state} -> {majority_state}")
+
+        current_stable_state = majority_state
+        transition_counter = 0
+
+    return current_stable_state
 
 # Predicts anomaly score based on feature vector and RPM state
 SMOOTHING = 10
@@ -136,7 +177,30 @@ def predict(feature_vector):
         return None
     
     fv = np.asarray(feature_vector, dtype=float).reshape(1, -1)
-    state = state_clf.predict(fv)[0]
+
+    # CLASSIFIER PREDICTION
+    probs = state_clf.predict_proba(fv)[0]
+    for cls, prob in zip(state_clf.classes_, probs):
+        print(cls, round(prob, 3))
+    classes = state_clf.classes_
+    best_idx = np.argmax(probs)
+    predicted_state = classes[best_idx]
+    confidence = probs[best_idx]
+
+    print(f"[CLASSIFIER] state={predicted_state} confidence={confidence:.3f}")
+
+    # LOW CONFIDENCE HANDLING
+    CONFIDENCE_THRESHOLD = 0.60
+    if confidence < CONFIDENCE_THRESHOLD:
+
+        print(f"[CLASSIFIER] LOW CONFIDENCE ({confidence:.3f})")
+
+        # keep previous stable state if exists
+        if current_stable_state is not None:
+            predicted_state = current_stable_state
+
+    # STATE SMOOTHING
+    state = smooth_state(predicted_state)
 
     entry = models.get(state)
     print("MODEL EXISTS:", entry is not None)

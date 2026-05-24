@@ -4,6 +4,10 @@ import random
 import json
 import ast
 from pathlib import Path
+import numpy as np
+import numpy.typing as npt
+from scipy import signal
+from scipy.fft import rfft
 
 # ============================================================
 # CONFIG
@@ -29,6 +33,12 @@ CACHE = {}
 # ============================================================
 # HELPERS
 # ============================================================
+Array = npt.NDArray[np.float64]
+def fft_peak(vib: Array) -> float:
+    vib = np.asarray(vib, dtype=float)
+    windowed = vib * signal.windows.hamming(vib.size)
+    spectrum = np.abs(rfft(windowed))
+    return float(np.max(spectrum))
 
 def get_state_key(rpm_mode, load):
 
@@ -158,7 +168,11 @@ def get_random_row(state):
 
     rows = load_state(state)
 
-    return random.choice(rows)
+    idx = random.randint(0, len(rows)-1)
+
+    print(f"[SIM ROW] {state} -> {idx}")
+
+    return rows[idx]
 
 
 # ============================================================
@@ -283,13 +297,16 @@ def vibration_sequence(
 
     rows = load_state(state)
 
-    start = random.randint(0, len(rows) - 8)
+    sample_count = len(rows) // 8
+
+    sample_idx = random.randint(0, sample_count-1)
+
+    start = sample_idx * 8
 
     chunks = []
 
     for i in range(8):
-
-        vib = rows[start + i][axis]
+        vib = rows[start+i][axis]
 
         signal = np.array(vib["d"], dtype=float)
 
@@ -298,7 +315,11 @@ def vibration_sequence(
             10 + wear * 30,
             size=len(signal)
         )
-
+        print(
+            np.min(signal),
+            np.max(signal),
+            np.std(signal)
+        )
         signal += noise
 
         signal *= (1.0 + wear * 0.25)
@@ -342,5 +363,15 @@ def vibration_sequence(
             "c": int(vib["c"]),
             "d": signal.astype(int).tolist()
         })
+    
+    full_signal = np.concatenate([
+        np.array(chunk["d"])
+        for chunk in chunks
+    ])
+
+    print(
+        f"[SIM FFT CHECK] "
+        f"max={fft_peak(full_signal/500):.1f}"
+    )
 
     return chunks

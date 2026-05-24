@@ -5,6 +5,7 @@ from scipy.fft import rfft
 from influx_client import *
 from ml_model import predict
 import json
+import time
 
 SAMPLING_FREQ = 1000
 
@@ -15,12 +16,19 @@ chunk_meta = {}
 
 # Global machine state cache
 machine_state = {}
+machine_timestamps = {}
 
 def update_state(machine, key, value):
+
     if machine not in machine_state:
         machine_state[machine] = {}
 
+    if machine not in machine_timestamps:
+        machine_timestamps[machine] = {}
+
     machine_state[machine][key] = value
+
+    machine_timestamps[machine][key] = time.time()
 
 
 def get_state(machine, key):
@@ -60,6 +68,34 @@ def psd_peak(vib: Array) -> float:
 def spectral_energy(vib):
     spectrum = np.abs(rfft(vib))
     return float(np.sum(spectrum ** 2))
+
+def features_are_synchronized(machine, max_delta=2.0):
+
+    if machine not in machine_timestamps:
+        return False
+
+    timestamps = machine_timestamps[machine]
+
+    required = [
+        "current_mean",
+        "current_imbalance",
+        "rpm",
+        "temperature",
+        "vibX_rms",
+        "vibY_rms",
+        "vibZ_rms"
+    ]
+
+    values = []
+
+    for key in required:
+
+        if key not in timestamps:
+            return False
+
+        values.append(timestamps[key])
+
+    return (max(values) - min(values)) <= max_delta
 
 # MQTT message processing pipeline
 def parse_topic(topic: str):
@@ -172,8 +208,14 @@ def process_message(topic: str, payload: str):
             update_state(machine, "temperature", value)
 
 def process_vibration(machine, axis, vib):
+    raw_max = np.max(vib)
+    raw_min = np.min(vib)
+
+    print("RAW MAX:", raw_max)
+    print("RAW MIN:", raw_min)
     vib = np.asarray(vib, dtype=float) / 500
-    print(np.max(vib))
+    print("SCALED MAX:", np.max(vib))
+    print("SCALED MIN:", np.min(vib))
     rms_val = rms(vib)
     fft_val = fft_peak(vib)
     psd_val = psd_peak(vib)
@@ -231,7 +273,11 @@ def process_vibration(machine, axis, vib):
     print("VIBX PSD PEAK:", vibX_psd_peak)
     if None in [current_imbalance, current_mean, rpm, tempC, vibX_fft_peak, vibX_rms, vibY_fft_peak, vibY_rms, vibZ_fft_peak, vibZ_rms]:
         return
-        
+
+    if not features_are_synchronized(machine):
+        print(f"[SYNC ERROR] Feature timestamps too far apart")
+        return
+
     feature_vector = [current_imbalance, current_mean, rpm, tempC, vibX_fft_peak, vibX_rms, vibY_fft_peak, vibY_rms, vibZ_fft_peak, vibZ_rms]
 
     print("FEATURE VECTOR:", feature_vector)

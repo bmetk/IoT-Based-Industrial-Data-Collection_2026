@@ -16,16 +16,50 @@ def simulate_machine(machine_id, stop_event, config):
 
                 rpm = model.get_rpm_value(rpm_mode)
 
-                temp = model.temperature(rpm, wear, load)
-                cur = model.current(rpm, wear, load, fault)
+                temp = model.temperature(
+                    rpm_mode,
+                    wear,
+                    load
+                )
+
+                cur = model.current(
+                    rpm_mode,
+                    wear,
+                    load,
+                    fault,
+                    fault_intensity
+                )
+
+                signal_x = model.vibration_sequence(
+                    rpm_mode,
+                    wear,
+                    load,
+                    "vibX",
+                    fault,
+                    fault_intensity
+                )
+
+                signal_y = model.vibration_sequence(
+                    rpm_mode,
+                    wear,
+                    load,
+                    "vibY",
+                    fault,
+                    fault_intensity
+                )
+
+                signal_z = model.vibration_sequence(
+                    rpm_mode,
+                    wear,
+                    load,
+                    "vibZ",
+                    fault,
+                    fault_intensity
+                )
 
                 publish(f"factory/{machine_id}/temperature/mlx90614/tempC", temp)
                 publish(f"factory/{machine_id}/speed/m0c70t3/rpm", rpm)
                 publish(f"factory/{machine_id}/current/zmct103c/amp", cur)
-
-                signal_x = model.vibration_sequence(rpm, wear, load, "vibX", fault, fault_intensity)
-                signal_y = model.vibration_sequence(rpm, wear, load, "vibY", fault, fault_intensity)
-                signal_z = model.vibration_sequence(rpm, wear, load, "vibZ", fault, fault_intensity)
 
                 for chunk in signal_x:
                     publish_vibration(
@@ -49,8 +83,6 @@ def simulate_machine(machine_id, stop_event, config):
                 print(f"[SIM ERROR] {machine_id}: {e}")
 
             time.sleep(1)
-            wear += wear_rate
-            wear = min(wear, 1.0)
-            config["wear"] = wear
+
     except Exception as e:
         print(f"[FATAL THREAD ERROR] {machine_id}: {e}")
