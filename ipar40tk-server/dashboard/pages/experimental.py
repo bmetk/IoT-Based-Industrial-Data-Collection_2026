@@ -14,14 +14,21 @@ layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader("Machine Health"),
-                dbc.CardBody(html.H4(id="exp-state"))
-                ])
+                dbc.CardBody(html.Div(id="exp-health"))
+            ])
         ], width=3),
 
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader("Operating State"),
-                dbc.CardBody(html.H3(id="exp-health"))
+                dbc.CardBody(html.H4(id="exp-state"))
+            ])
+        ], width=3),
+
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Classifier Confidence"),
+                dbc.CardBody(html.H3(id="exp-confidence"))
             ])
         ], width=3),
 
@@ -32,27 +39,6 @@ layout = dbc.Container([
             ])
         ], width=3),
 
-        dbc.Col([
-            dbc.Card([
-                dbc.CardHeader("Anomaly Severity"),
-                dbc.CardBody(html.H3(id="exp-severity"))
-            ])
-        ], width=3),
-
-        dbc.Col([
-            dbc.Card([
-                dbc.CardHeader("Anomaly"),
-                dbc.CardBody(html.H3(id="exp-anomaly"))
-            ])
-        ], width=3),
-
-        dbc.Col([
-            dbc.Card([
-                dbc.CardHeader("Is Anomaly?"),
-                dbc.CardBody(html.H3(id="exp-is-anomaly"))
-            ])
-        ], width=3)
-
     ], className="g-2"),
 
     html.Br(),
@@ -60,10 +46,42 @@ layout = dbc.Container([
     dbc.Row([
 
         dbc.Col([
-            html.Div(id="exp-status-table")
-        ], width=12)
+            dcc.Graph(
+                id="state-probabilities-chart"
+            )
+        ], width=8),
 
+        dbc.Col([
+            dcc.Graph(
+                id="confidence-gauge"
+            )
+        ], width=4),
+
+    ]),
+
+    html.Br(),
+
+    dbc.Row([
+
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Diagnostic Summary"),
+                dbc.CardBody(
+                    html.Div(id="diagnostic-summary")
+                )
+            ])
+        ])
+
+    ]),
+
+    html.Br(),
+
+    dbc.Row([
+        dbc.Col([
+            html.Div(id="exp-status-table")
+        ])
     ])
+    
 
 ], fluid=True)
 
@@ -75,10 +93,8 @@ layout = dbc.Container([
 @dash.callback(
     Output("exp-health", "children"),
     Output("exp-rul", "children"),
-    Output("exp-severity", "children"),
-    Output("exp-anomaly", "children"),
-    Output("exp-is-anomaly", "children"),
     Output("exp-state", "children"),
+    Output("exp-confidence", "children"),
 
     Input("machine-selector", "value"),
     Input("refresh", "n_intervals")
@@ -93,11 +109,8 @@ def update_experimental(machine, _):
     prediction = query_features(machine)
 
     if prediction is None or prediction.empty:
-
         return (
             "No ML data",
-            "N/A",
-            "N/A",
             "N/A",
             "N/A",
             "N/A"
@@ -112,17 +125,12 @@ def update_experimental(machine, _):
 
         return sub.sort_values("_time").iloc[-1]["_value"]
 
-    health = get_latest("health")
     rul = get_latest("rul")
-    severity = get_latest("anomaly_severity")
-    is_anomaly = get_latest("is_anomaly")
     state = get_latest("state")
     score = query_latest_anomaly(machine, "combined")
+    confidence = get_latest("classifier_confidence")
 
     state_text = state if state is not None else "N/A"
-
-    # HEALTH UI
-    health_text = float(health) if health is not None else "N/A"
 
     # RUL
     if rul is not None:
@@ -130,29 +138,170 @@ def update_experimental(machine, _):
     else:
         rul_text = "N/A"
 
-    # SEVERITY
-    if severity is not None:
-        severity_text = f"{float(severity):.4f}"
-    else:
-        severity_text = "0"
-
-    # ANOMALY
-    if is_anomaly == 1:
-        anomaly_text = "YES"
-    else:
-        anomaly_text = "NO"
+    confidence_text = (f"{float(confidence)*100:.1f}%" if confidence is not None else "N/A")
 
     prediction = health_indicator(score)
 
     return (
-        state_text,
-        health_text,
+        prediction,
         rul_text,
-        severity_text,
-        anomaly_text,
-        prediction
+        state_text,
+        confidence_text
     )
 
+@dash.callback(
+    Output("state-probabilities-chart", "figure"),
+    Input("machine-selector", "value"),
+    Input("refresh", "n_intervals")
+)
+def update_state_probabilities(machine, _):
+
+    prediction = query_features(machine)
+
+    classifier_rows = prediction[
+        prediction["_field"].str.startswith(
+            "classifier_"
+        )
+    ]
+
+    probs = {}
+
+    for field in classifier_rows["_field"].unique():
+
+        if field in [
+            "classifier_confidence",
+            "classifier_predicted_state"
+        ]:
+            continue
+
+        sub = classifier_rows[
+            classifier_rows["_field"] == field
+        ]
+
+        if sub.empty:
+            continue
+
+        value = (
+            sub.sort_values("_time")
+            .iloc[-1]["_value"]
+        )
+
+        state = field.replace(
+            "classifier_",
+            ""
+        )
+
+        probs[state] = float(value)
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            x=list(probs.values()),
+            y=list(probs.keys()),
+            orientation="h"
+        )
+    )
+
+    fig.update_layout(
+        title="State Probabilities",
+        height=450,
+        margin=dict(
+            l=20,
+            r=20,
+            t=40,
+            b=20
+        )
+    )
+
+    return fig
+
+@dash.callback(
+    Output("confidence-gauge", "figure"),
+    Input("machine-selector", "value"),
+    Input("refresh", "n_intervals")
+)
+def update_confidence(machine, _):
+
+    prediction = query_features(machine)
+
+    def get_latest(field):
+
+        sub = prediction[prediction["_field"] == field]
+
+        if sub.empty:
+            return None
+
+        return sub.sort_values("_time").iloc[-1]["_value"]
+
+    confidence = float(get_latest("classifier_confidence") or 0)
+
+    confidence *= 100
+
+    fig = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=confidence,
+            title={"text":"Classifier"},
+            gauge={
+                "axis":{
+                    "range":[0,100]
+                },
+                "steps":[
+                    {"range":[0,50]},
+                    {"range":[50,80]},
+                    {"range":[80,100]}
+                ]
+            }
+        )
+    )
+
+    return fig
+
+@dash.callback(
+    Output("diagnostic-summary", "children"),
+    Input("machine-selector", "value"),
+    Input("refresh", "n_intervals")
+)
+def update_diagnostic_summary(machine, _):
+
+    prediction = query_features(machine)
+
+    def get_latest(field):
+
+        sub = prediction[prediction["_field"] == field]
+
+        if sub.empty:
+            return None
+
+        return sub.sort_values("_time").iloc[-1]["_value"]
+
+    state = get_latest("classifier_predicted_state")
+    confidence = get_latest("classifier_confidence")
+    health = get_latest("health")
+    rul = get_latest("rul")
+    severity = get_latest("anomaly_severity")
+
+    confidence_text = (f"{float(confidence)*100:.1f}%" if confidence is not None else "N/A")
+
+    health_text = (f"{float(health):.1f}" if health is not None else "N/A")
+
+    rul_text = (f"{float(rul):.1f} h" if rul is not None else "N/A")
+
+    severity_text = (f"{float(severity):.4f}" if severity is not None else "N/A")
+
+    return html.Div([
+
+        html.H5("Diagnostic Summary"),
+
+        html.Ul([
+            html.Li(f"Predicted State: {state or 'N/A'}"),
+            html.Li(f"Confidence: {confidence_text}"),
+            html.Li(f"Health: {health_text}"),
+            html.Li(f"RUL: {rul_text}"),
+            html.Li(f"Severity: {severity_text}")
+        ])
+    ])
 
 # =========================================================
 # STATUS TABLE

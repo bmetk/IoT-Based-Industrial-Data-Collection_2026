@@ -189,6 +189,11 @@ def predict(feature_vector):
 
     print(f"[CLASSIFIER] state={predicted_state} confidence={confidence:.3f}")
 
+    state_probabilities = {
+        cls: float(prob)
+        for cls, prob in zip(classes, probs)
+    }
+
     # LOW CONFIDENCE HANDLING
     CONFIDENCE_THRESHOLD = 0.60
     if confidence < CONFIDENCE_THRESHOLD:
@@ -234,6 +239,9 @@ def predict(feature_vector):
         "severity": severity,
         "rul": rul,
         "health": round(health * 100, 1),
+        "predicted_state": predicted_state,
+        "confidence": confidence,
+        "state_probabilities": state_probabilities
     }
 
 # ============================================================

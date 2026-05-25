@@ -213,13 +213,16 @@ PRESETS = {
         "rpm_mode": "medium",
         "load": "high",
         "wear": 0.3,
-        "fault": "bearing"
+        "fault": "bearing",
+        "fault_intensity": 0.5
+
     },
     "stress": {
         "rpm_mode": "high",
         "load": "high",
         "wear": 0.2,
-        "fault": "misalignment"
+        "fault": "misalignment",
+        "fault_intensity": 0.8
     }
 }
 

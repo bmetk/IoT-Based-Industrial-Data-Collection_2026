@@ -296,3 +296,8 @@ def process_vibration(machine, axis, vib):
     write_feature_state(machine, "state", result["state"])
     if result["rul"] is not None:
         write_feature(machine, "rul", result["rul"])
+    write_feature_state(machine, "classifier_predicted_state", result["predicted_state"])
+    write_feature(machine, "classifier_confidence", result["confidence"])
+    for state_name, prob in result["state_probabilities"].items():
+
+        write_feature(machine, f"classifier_{state_name}", prob)
