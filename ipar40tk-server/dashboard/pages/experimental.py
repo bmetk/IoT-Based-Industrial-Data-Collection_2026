@@ -1,5 +1,5 @@
 import dash
-from dash import dcc, html, Input, Output
+from dash import dcc, html, Input, Output, no_update
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from influx_query import *
@@ -27,8 +27,8 @@ layout = dbc.Container([
 
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader("Classifier Confidence"),
-                dbc.CardBody(html.H3(id="exp-confidence"))
+                dbc.CardHeader("Anomaly Severity"),
+                dbc.CardBody(html.H3(id="exp-anomaly-severity"))
             ])
         ], width=3),
 
@@ -57,7 +57,7 @@ layout = dbc.Container([
             )
         ], width=4),
 
-    ]),
+    ], className="g-2"),
 
     html.Br(),
 
@@ -94,7 +94,7 @@ layout = dbc.Container([
     Output("exp-health", "children"),
     Output("exp-rul", "children"),
     Output("exp-state", "children"),
-    Output("exp-confidence", "children"),
+    Output("exp-anomaly-severity", "children"),
 
     Input("machine-selector", "value"),
     Input("refresh", "n_intervals")
@@ -128,7 +128,7 @@ def update_experimental(machine, _):
     rul = get_latest("rul")
     state = get_latest("state")
     score = query_latest_anomaly(machine, "combined")
-    confidence = get_latest("classifier_confidence")
+    anomaly_severity = get_latest("anomaly_severity")
 
     state_text = state if state is not None else "N/A"
 
@@ -138,7 +138,7 @@ def update_experimental(machine, _):
     else:
         rul_text = "N/A"
 
-    confidence_text = (f"{float(confidence)*100:.1f}%" if confidence is not None else "N/A")
+    anomaly_severity_text = (f"{float(anomaly_severity)*100:.1f}%" if anomaly_severity is not None else "N/A")
 
     prediction = health_indicator(score)
 
@@ -146,7 +146,7 @@ def update_experimental(machine, _):
         prediction,
         rul_text,
         state_text,
-        confidence_text
+        anomaly_severity_text
     )
 
 @dash.callback(
@@ -157,6 +157,9 @@ def update_experimental(machine, _):
 def update_state_probabilities(machine, _):
 
     prediction = query_features(machine)
+
+    if prediction.empty:
+        return no_update
 
     classifier_rows = prediction[
         prediction["_field"].str.startswith(
@@ -225,7 +228,16 @@ def update_confidence(machine, _):
 
     prediction = query_features(machine)
 
-    def get_latest(field):
+    if prediction.empty:
+        return no_update
+
+    def get_latest(prediction, field):
+
+        if prediction is None or prediction.empty:
+            return None
+
+        if "_field" not in prediction.columns or "_value" not in prediction.columns:
+            return None
 
         sub = prediction[prediction["_field"] == field]
 
@@ -234,25 +246,17 @@ def update_confidence(machine, _):
 
         return sub.sort_values("_time").iloc[-1]["_value"]
 
-    confidence = float(get_latest("classifier_confidence") or 0)
+    confidence = float(get_latest(prediction, "classifier_confidence") or 0)
 
     confidence *= 100
 
     fig = go.Figure(
         go.Indicator(
             mode="gauge+number",
-            value=confidence,
-            title={"text":"Classifier"},
-            gauge={
-                "axis":{
-                    "range":[0,100]
-                },
-                "steps":[
-                    {"range":[0,50]},
-                    {"range":[50,80]},
-                    {"range":[80,100]}
-                ]
-            }
+            value=confidence if confidence is not None else 0,
+            title={"text":"Classifier (no data)" if confidence is None else "Classifier Confidence", "font": {"size": 20}},
+            gauge={"axis":{"range":[0,100]}, "bar": {"thickness": 0.3}},
+            number={"font": {"size": 60}}
         )
     )
 
@@ -267,7 +271,16 @@ def update_diagnostic_summary(machine, _):
 
     prediction = query_features(machine)
 
-    def get_latest(field):
+    if prediction.empty:
+        return no_update
+
+    def get_latest(prediction, field):
+
+        if prediction is None or prediction.empty:
+            return None
+
+        if "_field" not in prediction.columns or "_value" not in prediction.columns:
+            return None
 
         sub = prediction[prediction["_field"] == field]
 
@@ -276,11 +289,11 @@ def update_diagnostic_summary(machine, _):
 
         return sub.sort_values("_time").iloc[-1]["_value"]
 
-    state = get_latest("classifier_predicted_state")
-    confidence = get_latest("classifier_confidence")
-    health = get_latest("health")
-    rul = get_latest("rul")
-    severity = get_latest("anomaly_severity")
+    state = get_latest(prediction, "classifier_predicted_state")
+    confidence = get_latest(prediction, "classifier_confidence")
+    health = get_latest(prediction, "health")
+    rul = get_latest(prediction, "rul")
+    severity = get_latest(prediction, "anomaly_severity")
 
     confidence_text = (f"{float(confidence)*100:.1f}%" if confidence is not None else "N/A")
 
