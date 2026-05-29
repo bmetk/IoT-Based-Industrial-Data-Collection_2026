@@ -305,8 +305,6 @@ def update_diagnostic_summary(machine, _):
 
     return html.Div([
 
-        html.H5("Diagnostic Summary"),
-
         html.Ul([
             html.Li(f"Predicted State: {state or 'N/A'}"),
             html.Li(f"Confidence: {confidence_text}"),
