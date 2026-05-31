@@ -403,11 +403,7 @@ def update_status(machine, _):
 
                 badge("ESP1 status from ESP2", lathe_status_esp2_esp1)
 
-            ], style={
-                "display": "flex",
-                "flexWrap": "wrap",
-                "gap": "5px"
-            })
+            ], style={"display": "flex", "flexWrap": "wrap", "gap": "5px"})
 
         ], style={"padding": "5px"}),
 

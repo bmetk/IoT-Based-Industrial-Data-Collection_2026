@@ -34,14 +34,15 @@ layout = dbc.Container([
 
         dbc.Col([
             dbc.Button("Apply preset", id="apply-preset", color="primary")
-        ], width=4),
-
-        dbc.Col([
-            dbc.Button("Apply config", id="apply-config", color="success")
-        ], width=2, style={"marginTop": "20px"})
+        ], width=4)
     ], className="mb-3"),
 
     html.Hr(),
+    dbc.Row([
+       dbc.Col([
+            dbc.Button("Apply config", id="apply-config", color="success")
+        ], width="auto", style={"marginTop": "20px", "marginBottom": "10px"})
+    ], justify="center", className="mb-3"),
     dcc.Tabs([
         dcc.Tab(label="Operation", children=[
 
@@ -107,7 +108,7 @@ layout = dbc.Container([
                     {"label": "Misalignment", "value": "misalignment"},
                     {"label": "Bearing fault", "value": "bearing"},
                     {"label": "Looseness", "value": "looseness"},
-                ],
+                ],placeholder="Fault type",
                 value=None
             ),
 
@@ -117,7 +118,7 @@ layout = dbc.Container([
             dcc.Slider(id="fault-intensity", min=0, max=1, step=0.05, value=0)
         ])
     ]),
-    
+    html.Hr(),
     dbc.Card([
         dbc.CardHeader("Live config snapshot"),
         dbc.CardBody([
