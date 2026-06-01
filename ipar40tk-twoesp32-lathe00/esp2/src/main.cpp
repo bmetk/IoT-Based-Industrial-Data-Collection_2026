@@ -7,12 +7,12 @@
 #include <ArduinoJson.h>
 
 // MQTT topics for vibration data
-#define VIBX_TOPIC "factory/lathe02/vibration/mpu9250/vibX"
-#define VIBY_TOPIC "factory/lathe02/vibration/mpu9250/vibY"
-#define VIBZ_TOPIC "factory/lathe02/vibration/mpu9250/vibZ"
+#define VIBX_TOPIC "factory/lathe00/vibration/mpu9250/vibX"
+#define VIBY_TOPIC "factory/lathe00/vibration/mpu9250/vibY"
+#define VIBZ_TOPIC "factory/lathe00/vibration/mpu9250/vibZ"
 
 // ESP2 Status report
-#define STATUS_TOPIC "factory/lathe02/status/esp2"
+#define STATUS_TOPIC "factory/lathe00/status/esp2"
 unsigned long lastEsp1Response = 0;
 bool esp1Online = false;
 
@@ -92,10 +92,10 @@ void checkSystemHealth();
 void checkSerialMessage();
 uint8_t calcChecksum(Esp2Status &msg);
 void sendStatus();
-void mqttTask(void *pv);
-void sensorTask(void *pv);
-void serialTask(void *pv);
-void statusTask(void *pv);
+void SendMqttMessage(void *pv);
+void CollectVibration(void *pv);
+void SerialMessageHandler(void *pv);
+void SendSensorStatus(void *pv);
 
 // Calculate checksum for the status message
 uint8_t calcChecksum(Esp2Status &msg)
@@ -169,15 +169,15 @@ void setup()
 
   // Configure MPU9250 with I2C address and settings
   imu.Config(&Wire, bfs::Mpu9250::I2C_ADDR_PRIM);
-  
+  imu.ConfigSrd(0);
+  imu.ConfigAccelRange(bfs::Mpu9250::ACCEL_RANGE_4G);
+
   client.enableDebuggingMessages();
   client.setKeepAlive(10);
   client.setMaxPacketSize(4096);
   client.setMqttReconnectionAttemptDelay(10000);
   client.setWifiReconnectionAttemptDelay(10000);
 
-  imu.ConfigSrd(0);
-  imu.ConfigAccelRange(bfs::Mpu9250::ACCEL_RANGE_4G);
 
   // Interrupt
   pinMode(DRDY_PIN, INPUT_PULLUP);
@@ -195,8 +195,8 @@ void setup()
 
   // Create a task that will be executed in the SendMqttMessage() function, with priority 2 and executed on core 1
   xTaskCreatePinnedToCore(
-      mqttTask, /* task function. */
-      "mqttTask", /* name of task. */
+      SendMqttMessage, /* task function. */
+      "SendMqttMessage", /* name of task. */
       8192, /* stack size of task */
       NULL, /* parameter of the task */
       2, /* priority of the task */
@@ -205,8 +205,8 @@ void setup()
 
   // Create a task that will be executed in the CollectVibration() function, with priority 3 and executed on core 1
   xTaskCreatePinnedToCore(
-      sensorTask, /* task function. */
-      "sensorTask", /* name of task. */
+      CollectVibration, /* task function. */
+      "CollectVibration", /* name of task. */
       4096, /* stack size of task */
       NULL, /* parameter of the task */
       3, /* priority of the task */
@@ -215,8 +215,8 @@ void setup()
 
   // Create a task that will be executed in the SerialMessageHandler() function, with priority 1 and executed on core 0
   xTaskCreatePinnedToCore(
-      serialTask, /* task function. */
-      "serialTask", /* name of task. */
+      SerialMessageHandler, /* task function. */
+      "SerialMessageHandler", /* name of task. */
       4096, /* stack size of task */
       NULL, /* parameter of the task */
       1, /* priority of the task */
@@ -225,8 +225,8 @@ void setup()
 
   // Create a task that will be executed in the SendSensorStatus() function, with priority 1 and executed on core 0
   xTaskCreatePinnedToCore(
-      statusTask, /* task function. */
-      "statusTask", /* name of task. */
+      SendSensorStatus, /* task function. */
+      "SendSensorStatus", /* name of task. */
       4096, /* stack size of task */
       NULL, /* parameter of the task */
       1, /* priority of the task */
@@ -268,26 +268,6 @@ void collectData()
     imu.DisableDrdyInt();
     DATA_READY = true;
   }
-}
-
-String arrayToString(float arr[])
-{
-  String encodedArray = "[";
-  String sep = ", ";
-  for (uint16_t i = 0; i < sampleSize; i++)
-  {
-    encodedArray += String(arr[i]);
-    if (i < sampleSize - 1)
-    {
-      encodedArray += sep;
-    }
-    else
-    {
-      encodedArray += "]";
-    }
-  }
-
-  return encodedArray;
 }
 
 // Function to send collected data as JSON messages to MQTT broker in chunks
@@ -474,7 +454,7 @@ void publishSystemStatus()
 }
 
 // Task function to continuously check MQTT connection and send collected data when ready
-void mqttTask(void *pv)
+void SendMqttMessage(void *pv)
 {
   for (;;)
   {
@@ -490,7 +470,7 @@ void mqttTask(void *pv)
 }
 
 // Task function to continuously check for new vibration data and collect it when ready
-void sensorTask(void *pv)
+void CollectVibration(void *pv)
 {
   for (;;)
   {
@@ -504,7 +484,7 @@ void sensorTask(void *pv)
 }
 
 // Task function to continuously check for incoming serial messages from ESP1 and execute commands
-void serialTask(void *pv)
+void SerialMessageHandler(void *pv)
 {
   for (;;)
   {
@@ -515,7 +495,7 @@ void serialTask(void *pv)
 }
 
 // Task function to continuously check the health of the system and publish status updates to MQTT broker
-void statusTask(void *pv)
+void SendSensorStatus(void *pv)
 {
   for (;;)
   {
