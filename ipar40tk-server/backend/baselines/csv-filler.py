@@ -1,3 +1,5 @@
+# This script fills missing values for the selected ".xlsx" dataset using interpolation and forward/backward filling.
+
 import pandas as pd
 
 FEATURE_COLUMNS = [

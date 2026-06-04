@@ -1,3 +1,5 @@
+# This module defines the main simulation loop for each machine, which generates sensor data based on the machine's configuration and publishes it to MQTT topics.
+
 from logging import config
 import time
 from mqtt_publisher import publish, publish_vibration

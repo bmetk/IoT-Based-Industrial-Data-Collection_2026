@@ -1,3 +1,7 @@
+# This page provides an interface for controlling the simulation parameters of the machinery. 
+# Users can select from predefined scenarios or customize settings to test specific conditions. 
+# The page also displays a live snapshot of the current configuration for easy reference.
+
 import dash
 from dash import html, dcc, Input, Output, State, callback, ctx
 import dash_bootstrap_components as dbc

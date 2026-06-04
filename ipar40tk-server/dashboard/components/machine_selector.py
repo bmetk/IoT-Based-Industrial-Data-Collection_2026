@@ -1,3 +1,5 @@
+# Machine selector dropdown component for the dashboard
+
 from dash import dcc
 
 machine_selector = dcc.Dropdown(

@@ -1,7 +1,9 @@
+# This module defines the navigation bar component for the OpenMAPS Dashboard.
+# The navbar includes links to different pages and a toggle for simulation mode.
+
 import dash_bootstrap_components as dbc
-from dash import html, ctx, no_update
+from dash import html, ctx, no_update, Input, Output, callback, dcc, State
 import requests
-from dash import Input, Output, callback, dcc, State
 from components.machine_selector import machine_selector
 
 navbar = dbc.Navbar(
@@ -49,7 +51,6 @@ API_URL = "http://simulator:9000"
 
 @callback(
     Output("sim-toggle", "label"),
-    #Output("sim-toggle", "value"),
     Input("sim-toggle", "value"),
     Input("machine-selector", "value"),
     State("sim-config-store", "data"),

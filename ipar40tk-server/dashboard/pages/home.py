@@ -1,3 +1,6 @@
+# This file defines the layout and callbacks for the home page of the dashboard.
+# It includes real-time gauges for RPM, temperature and current, as well as a vibration spectrum graph and an export feature for downloading data in XLSX format.
+
 import dash
 from dash import dcc, html, Input, Output, no_update, State
 import dash_bootstrap_components as dbc

@@ -1,3 +1,5 @@
+# This page provides visualizations of vibration features such as RMS, FFT peaks and PSD peaks for the monitored machines and also includes an export feature for downloading data in XLSX format.
+
 import dash
 from dash import dcc, html, Input, Output, no_update, State
 import dash_bootstrap_components as dbc

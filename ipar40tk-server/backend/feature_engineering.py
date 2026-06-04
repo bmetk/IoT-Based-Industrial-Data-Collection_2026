@@ -1,3 +1,6 @@
+# Feature engineering module for the IPAR40TK server backend
+# Contains functions for processing raw telemetry data, extracting features, and preparing input for the ML model
+
 import numpy as np
 import numpy.typing as npt
 from scipy import signal
@@ -18,6 +21,7 @@ chunk_meta = {}
 machine_state = {}
 machine_timestamps = {}
 
+# State management functions to keep track of latest values and timestamps for each machine and feature
 def update_state(machine, key, value):
 
     if machine not in machine_state:
@@ -34,21 +38,20 @@ def update_state(machine, key, value):
 def get_state(machine, key):
     return machine_state.get(machine, {}).get(key)
 
-
+# RMS calculation
 def rms(vib: Array) -> float:
     vib = np.asarray(vib, dtype=float)
     return np.sqrt(np.mean(vib ** 2))
 
-
+# FFT peak calculation function that applies a Hamming window and returns the maximum amplitude in the spectrum
 def fft_peak(vib: Array) -> float:
     vib = np.asarray(vib, dtype=float)
     windowed = vib * signal.windows.hamming(vib.size)
     spectrum = np.abs(rfft(windowed))
     return float(np.max(spectrum))
 
-
+# FFT calculation function that applies a Hamming window and returns the amplitude spectrum
 def calculate_fft(vib: Array) -> np.ndarray:
-    """Return FFT amplitude spectrum."""
     windowed = vib * signal.windows.hamming(vib.size)
 
     spectrum = np.abs(rfft(windowed))
@@ -56,11 +59,12 @@ def calculate_fft(vib: Array) -> np.ndarray:
 
     return spectrum
 
+# Power Spectral Density calculation function that applies a Hamming window and returns the frequencies and corresponding PSD values
 def get_psd(vib: Array) -> tuple[list[float], list[float]]:
-    """Power spectral density using periodogram."""
     f, psd = signal.periodogram(vib, fs=SAMPLING_FREQ, window="hamming")
     return f.tolist(), psd.tolist()
 
+# PSD peak calculation function that applies a Hamming window and returns the maximum PSD value
 def psd_peak(vib: Array) -> float:
     f, psd = signal.periodogram(vib, fs=SAMPLING_FREQ, window="hamming")
     return float(np.max(psd))
@@ -69,6 +73,7 @@ def spectral_energy(vib):
     spectrum = np.abs(rfft(vib))
     return float(np.sum(spectrum ** 2))
 
+# Function to check if all required features for a machine are synchronized within a certain time delta
 def features_are_synchronized(machine, max_delta=2.0):
 
     if machine not in machine_timestamps:
@@ -119,6 +124,7 @@ def parse_payload(payload: str):
         return None
 
 # Main processing function for MQTT messages
+# Depending on the aspect (vibration, current, scalar), it extracts features, updates state, and calls the ML model when enough data is available
 def process_message(topic: str, payload: str):
 
     info = parse_topic(topic)
@@ -126,6 +132,7 @@ def process_message(topic: str, payload: str):
     machine = info["machine"]
     aspect = info["aspect"]
     metric = info["metric"]
+    # Vibration pipeline to handles chunked vibration data, reconstructs the signal, extracts features, and calls the ML model when all chunks are received
     if aspect == "vibration":
         data = parse_payload(payload)
 
@@ -163,6 +170,7 @@ def process_message(topic: str, payload: str):
             del chunk_buffers[key]
             del chunk_meta[key]        
 
+    # Current pipeline to handle current data, extract features like mean and imbalance, and update state for synchronization with vibration features
     elif aspect == "current":
 
         value = parse_payload(payload)
@@ -189,7 +197,7 @@ def process_message(topic: str, payload: str):
         update_state(machine, "current_mean", mean_current)
         update_state(machine, "current_imbalance", imbalance)
 
-    # Scalar pipeline (temperature, rpm)
+    # Scalar pipeline to handle scalar metrics like RPM and temperature, write features, and update state for synchronization
     else:
         value = parse_payload(payload)
 
@@ -207,6 +215,7 @@ def process_message(topic: str, payload: str):
         if metric in ["tempC", "temperature"]:
             update_state(machine, "temperature", value)
 
+# Main function to process vibration data, extract features, and call the ML model when all required features are synchronized
 def process_vibration(machine, axis, vib):
     raw_max = np.max(vib)
     raw_min = np.min(vib)
@@ -282,7 +291,8 @@ def process_vibration(machine, axis, vib):
 
     print("FEATURE VECTOR:", feature_vector)
     print("RPM:", rpm, "CURRENT:", current_mean)
-
+    
+    # Call the ML model to get predictions based on the extracted features, and write the results back to InfluxDB
     result = predict(feature_vector)
     print("RESULT:", result)
     if result is None:

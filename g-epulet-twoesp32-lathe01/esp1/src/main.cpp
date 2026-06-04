@@ -1,21 +1,21 @@
 /*
 
-  This version runs 3 sensors, a display and navigation buttons
+  ESP1 connected to 3 sensors, an OLED display and navigation buttons
 
-  The sensors are:
-    - optocouler
-    - temperature sensor
-    - current meter
+  Sensors are:
+    - IR optocouler
+    - Temperature sensor
+    - Current meter
 
-  The current diplay is a 0.92" 128x64 oled display.
+  Display is a 0.92" 128x64 oled display.
 
-  The two navigation buttons are:
+  Two navigation buttons are:
     - Next: going to the next possinle state
-    - Select: entering a new state/calling a function
+    - Select: entering a new state or calling a function
 
-  To utilise the two cores, both are running a task:
-    - Task 1: display, mqtt etc.
-    - Task 2: data collection
+  For utilising the two processor cores, both are running multiple tasks:
+    - Core 0: handling the display and the menu system, checking ESP1's health
+    - Core 1: handling the sensor data and the communication with ESP2
 
 */
 

@@ -1,3 +1,5 @@
+# This module defines the MQTT publisher that is used to send simulated sensor data to the MQTT broker.
+
 import json
 import paho.mqtt.client as mqtt
 import os

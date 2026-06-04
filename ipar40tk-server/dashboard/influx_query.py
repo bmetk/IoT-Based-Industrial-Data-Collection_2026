@@ -1,3 +1,7 @@
+# InfluxDB query functions for the IPAR40TK server dashboard
+# This module provides functions to query the InfluxDB time-series database for machine telemetry, features, predictions and status information. 
+# The functions use the InfluxDB Python client to execute Flux queries and return the results as pandas DataFrames for further processing and visualization in the dashboard.
+
 from influxdb_client import InfluxDBClient
 import pandas as pd
 from config import *

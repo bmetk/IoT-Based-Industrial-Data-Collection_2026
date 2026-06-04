@@ -1,3 +1,6 @@
+# Configuration module for the IPAR40TK server backend
+# Contains constants and environment variable loading for MQTT broker connection and InfluxDB parameters used by the MQTT client and data processing components
+
 import os
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "mosquitto")

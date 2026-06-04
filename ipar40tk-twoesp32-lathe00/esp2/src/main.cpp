@@ -1,3 +1,12 @@
+/* 
+  ESP2 connected to accelerometer, gyroscope and magnetometer (MPU9250 IMU)
+
+  For utilising the two processor cores, both are running multiple tasks:
+    - Core 0: handling the display and the menu system, checking ESP1's health
+    - Core 1: handling the sensor data and the communication with ESP2
+
+*/
+
 #include <Arduino.h>
 #include "mpu9250.h"
 #include "EspMQTTClient.h"

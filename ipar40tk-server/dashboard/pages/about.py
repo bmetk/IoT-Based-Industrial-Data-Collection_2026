@@ -1,3 +1,5 @@
+# This page provides an overview of the OpenMAPS project.
+
 import dash
 from dash import dcc
 import dash_bootstrap_components as dbc

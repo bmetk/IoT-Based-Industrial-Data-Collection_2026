@@ -1,3 +1,5 @@
+#This module defines the API endpoints for controlling the machine simulation.
+
 from fastapi import FastAPI
 import threading
 from simulator import simulate_machine
@@ -90,12 +92,14 @@ def update_config(machine_id: str, rpm_mode: str, load: str, wear: float = 0.0, 
         "wear_rate": wear_rate
     }
 
+# Get the status of a machine simulation for a given machine ID
 @app.get("/status/{machine_id}")
 def status(machine_id: str):
     if machine_id in machines:
         return {"running": True}
     return {"running": False}
 
+# Reset the wear and fault status of a machine simulation for a given machine ID
 @app.post("/reset/{machine_id}")
 def reset(machine_id: str):
     with lock:

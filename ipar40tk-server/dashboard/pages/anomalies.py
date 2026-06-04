@@ -1,3 +1,5 @@
+# This page displays the anomaly timeline for a selected machine.
+
 import dash
 from dash import dcc, Input, Output, no_update
 import dash_bootstrap_components as dbc

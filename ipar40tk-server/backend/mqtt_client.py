@@ -1,3 +1,6 @@
+# MQTT client module for the IPAR40TK server backend
+# Handles connection to the MQTT broker, subscription to telemetry topics, and processing of incoming messages using the feature engineering and ML model components
+
 import paho.mqtt.client as mqtt
 from feature_engineering import process_message
 from config import *

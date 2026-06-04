@@ -1,3 +1,6 @@
+# This page provides an experimental dashboard for advanced machine health monitoring and predictive maintenance insights.
+# It includes visualizations of ML predictions, state probabilities and diagnostic summaries.
+
 import dash
 from dash import dcc, html, Input, Output, no_update
 import dash_bootstrap_components as dbc

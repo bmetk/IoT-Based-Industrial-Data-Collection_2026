@@ -1,3 +1,6 @@
+# ML model module for the IPAR40TK server backend
+# Implements the machine learning components for operating state classification and anomaly detection based on the extracted feature vectors
+
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
 import numpy as np
 from sklearn.preprocessing import StandardScaler
@@ -19,6 +22,7 @@ transition_counter = 0
 
 TRANSITION_REQUIRED = 5
 
+# Global state classifier instance
 def set_state_clf(clf):
     global state_clf
     state_clf = clf
@@ -36,6 +40,7 @@ FEATURE_COLUMNS = [
     "vibZ_rms"
 ]
 
+# Load baseline data for each state, fit the Isolation Forest models, and compute anomaly thresholds
 def load_baselines(folder):
     for state in STATES:
         path = os.path.join(folder, f"{state}.xlsx")
@@ -73,7 +78,7 @@ STATES = [
 ]
 
 
-
+# Create a new entry for each state with the Isolation Forest model, scaler, and other metadata
 def create_entry():
     return {
         "model": IsolationForest(contamination=0.02),
@@ -85,7 +90,7 @@ def create_entry():
 for state in STATES:
     models[state] = create_entry()
 
-
+# Compute the anomaly score threshold for a given state based on the baseline data
 def compute_threshold(model, scaler, X):
     X_scaled = scaler.transform(X)
     scores = model.decision_function(X_scaled)
@@ -95,6 +100,7 @@ def compute_threshold(model, scaler, X):
 
     return threshold
 
+# Load the training data for all states, concatenate into a single DataFrame, and return it for classifier training
 def load_training_data(folder):
     dfs = []
 
@@ -109,6 +115,7 @@ def load_training_data(folder):
     full_df = pd.concat(dfs, ignore_index=True)
     return full_df
 
+# Train a Random Forest classifier to predict the operating state based on the feature columns, and print feature importance and classification report
 def train_state_classifier(df):
     X = df[FEATURE_COLUMNS].values
     y = df["state"].values
@@ -133,6 +140,7 @@ def train_state_classifier(df):
     print(sample[FEATURE_COLUMNS].mean())
     return clf
 
+# Smooths the predicted state over time using a majority vote of recent predictions, and only accepts a state change after a certain number of consecutive confirmations to avoid rapid fluctuations
 def smooth_state(predicted_state):
 
     global current_stable_state
@@ -169,6 +177,7 @@ def smooth_state(predicted_state):
 # Predicts anomaly score based on feature vector and RPM state
 SMOOTHING = 10
 
+# Main prediction function that takes a feature vector, predicts the operating state using the classifier, applies low confidence handling and state smoothing, and then computes the anomaly score using the corresponding Isolation Forest model for the predicted state. Also updates the RUL estimation based on the anomaly score.
 def predict(feature_vector):
     global state_clf
 
@@ -252,6 +261,7 @@ MAX_RUL_HOURS = 3500
 
 RUL_WINDOW = 100
 
+# For each state, maintain a history of anomaly scores, an accumulated wear metric, and a smoothed health index. The RUL estimation is based on the accumulated wear and the current health index, with anomalies accelerating degradation.
 def create_rul_entry():
     return {
         "history": deque(maxlen=RUL_WINDOW),
@@ -268,6 +278,7 @@ def create_rul_entry():
 
 rul_models = { state: create_rul_entry() for state in STATES}
 
+# Normalize the anomaly score into a health index between 0 and 1, where 1 is healthy and 0 is at the anomaly threshold. The normalization is based on the baseline threshold and a reference healthy score, and is clipped to the range [0, 1].
 def normalize_score(state, score):
 
     threshold = models[state]["threshold"]
@@ -281,6 +292,7 @@ def normalize_score(state, score):
     return np.clip(normalized, 0.0, 1.0)
 
 
+# Update the RUL estimation for a given state based on the latest anomaly score. The function updates the health index using exponential smoothing, calculates the degradation rate, accumulates wear, and estimates the remaining useful life (RUL) in hours. Anomalies accelerate degradation, and the RUL is clipped to a maximum value.
 def update_rul(state, score):
 
     entry = rul_models[state]

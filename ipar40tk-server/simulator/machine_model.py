@@ -1,10 +1,11 @@
+# This module simulates machine sensor data based on baseline XLSX files for different operating states.
+
 import pandas as pd
 import numpy as np
 import random
 import json
 import ast
 from pathlib import Path
-import numpy as np
 import numpy.typing as npt
 from scipy import signal
 from scipy.fft import rfft

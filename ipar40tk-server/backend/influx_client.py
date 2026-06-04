@@ -1,3 +1,6 @@
+# InfluxDB client module for the IPAR40TK server backend
+# Provides functions to write processed features, predictions and FFT data into InfluxDB for storage and later visualization in the dashboard
+
 from influxdb_client import InfluxDBClient, Point
 from config import *
 

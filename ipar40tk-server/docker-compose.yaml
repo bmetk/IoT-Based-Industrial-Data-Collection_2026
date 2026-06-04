@@ -1,3 +1,12 @@
+# Docker Compose configuration for the IPAR40TK server components
+# This configuration sets up the following services:
+# - Mosquitto MQTT broker | On 1883:1883 port
+# - InfluxDB time-series database | On 8086:8086 port
+# - Telegraf for data collection | Configured to read from Mosquitto and write to InfluxDB
+# - Backend preprocessing and ML predictive maintenance service | On 8765:8765 port
+# - Dashboard for data visualization | On 8050:8050 port
+# - Simulator API for generating test data | On 9000:9000 port
+
 services:
 
   mosquitto:
