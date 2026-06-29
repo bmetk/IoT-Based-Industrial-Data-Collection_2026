@@ -36,12 +36,26 @@ services:
       - influxdb_data:/var/lib/influxdb2
     environment:
       - DOCKER_INFLUXDB_INIT_MODE=setup
-      - DOCKER_INFLUXDB_INIT_USERNAME=admin
-      - DOCKER_INFLUXDB_INIT_PASSWORD=password
+      - DOCKER_INFLUXDB_INIT_USERNAME=tkadmin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=iot26bmetk
       - DOCKER_INFLUXDB_INIT_ORG=bmetk
       - DOCKER_INFLUXDB_INIT_BUCKET=openmaps
       - DOCKER_INFLUXDB_INIT_RETENTION=30d
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUX_TOKEN_OPENMAPS}
+    networks:
+      - openmaps-net
+
+  influx-init:
+    image: influxdb:2.7-alpine
+    depends_on:
+      - influxdb
+    volumes:
+      - ./influxdb/influx-init.sh:/init.sh
+    entrypoint:
+      - sh
+      - /init.sh
+    env_file:
+      - .env
     networks:
       - openmaps-net
 
