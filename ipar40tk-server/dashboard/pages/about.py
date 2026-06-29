@@ -26,7 +26,7 @@ The platform continuously collects operational data from multiple sensors, proce
 
 Project repository:
 
-https://github.com/bmetk
+https://github.com/bmetk/IoT-Based-Industrial-Data-Collection_2026
 
 Main capabilities:
 
